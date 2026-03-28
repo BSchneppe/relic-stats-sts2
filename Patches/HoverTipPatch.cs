@@ -17,7 +17,7 @@ public static class HoverTipsPatch
         var stats = RelicStatsRegistry.Get(__instance.Id.Entry);
         if (stats == null) return;
 
-        var floorText = $"[color=gray]Obtained on floor {__instance.FloorAddedToDeck}[/color]";
+        var floorText = $"Floor obtained: {__instance.FloorAddedToDeck}";
         var statsText = stats.GetDescription(RelicStatsRegistry.TurnCount, RelicStatsRegistry.CombatCount);
         var description = $"{floorText}\n{statsText}";
 

@@ -33,10 +33,10 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
         if (effectiveTurns < 1) effectiveTurns = 1;
         if (effectiveCombats < 1) effectiveCombats = 1;
 
-        var perTurn = ((float)Amount / effectiveTurns).ToString("0.#", CultureInfo.InvariantCulture);
-        var perCombat = ((float)Amount / effectiveCombats).ToString("0.#", CultureInfo.InvariantCulture);
+        var perTurn = ((float)Amount / effectiveTurns).ToString("0.###", CultureInfo.InvariantCulture);
+        var perCombat = ((float)Amount / effectiveCombats).ToString("0.###", CultureInfo.InvariantCulture);
 
-        return $"{FormatStat(Amount)} ({Fmt.Blue(perTurn)}/turn, {Fmt.Blue(perCombat)}/combat)";
+        return $"{FormatStat(Amount)}\nPer turn: {Fmt.Blue(perTurn)}\nPer combat: {Fmt.Blue(perCombat)}";
     }
 
     public JsonObject Save()
