@@ -39,6 +39,10 @@ public static class Fmt
     /// Returns the energy icon BBCode for the local player's character class.
     /// Falls back to "[gold]Energy[/gold]" if no run is active.
     /// </summary>
+    /// <summary>
+    /// Returns "42 [energy icon]" — the number + one energy icon.
+    /// Falls back to "42 Energy" if no run is active.
+    /// </summary>
     public static string EnergyIcon(int amount)
     {
         var prefix = RunManager.Instance?.GetLocalCharacterEnergyIconPrefix();
@@ -46,7 +50,6 @@ public static class Fmt
             return $"{Blue(amount)} {Gold("Energy")}";
 
         var path = $"res://images/packed/sprite_fonts/{prefix}_energy_icon.png";
-        var icons = string.Concat(System.Linq.Enumerable.Repeat($"[img]{path}[/img]", amount));
-        return icons;
+        return $"{Blue(amount)} [img]{path}[/img]";
     }
 }
