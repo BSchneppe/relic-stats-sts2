@@ -38,6 +38,13 @@
     <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*" />
   </ItemGroup>
 
+  <!-- Exclude test project from Godot SDK's auto-globbing -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+  </ItemGroup>
+
   <Target Name="CopyModFiles" AfterTargets="Build">
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(STS2ModsDir)/RelicStats" />
     <Copy SourceFiles="RelicStats.json" DestinationFolder="$(STS2ModsDir)/RelicStats" />
