@@ -224,7 +224,8 @@ public sealed class PaelsEyeStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Took {ExtraTurns} extra turns. Exhausted {CardsExhausted} cards.";
+        return $"Took {Fmt.Blue(ExtraTurns)} extra turns.\n" +
+               $"{Fmt.Gold("Exhausted")} {Fmt.Blue(CardsExhausted)} cards.";
     }
 
     public JsonObject Save()
@@ -321,7 +322,8 @@ public sealed class PenNibStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Doubled damage {Triggers} times. {AttacksPlayed} attacks played.";
+        return $"Doubled {Fmt.Gold("Damage")} {Fmt.Blue(Triggers)} times.\n" +
+               $"Attacks played: {Fmt.Blue(AttacksPlayed)}";
     }
 
     public JsonObject Save()
@@ -401,7 +403,9 @@ public sealed class PhylacteryUnboundStats : IRelicStats
     public string GetDescription(int totalTurns, int totalCombats)
     {
         var total = CombatStartSummons + TurnSummons;
-        return $"Summoned {total} minions ({CombatStartSummons} at combat start, {TurnSummons} per turn).";
+        return $"Summoned {Fmt.Blue(total)} minions.\n" +
+               $"  At combat start: {Fmt.Blue(CombatStartSummons)}\n" +
+               $"  Per turn: {Fmt.Blue(TurnSummons)}";
     }
 
     public JsonObject Save()
@@ -659,7 +663,7 @@ public sealed class NunchakuStats : SimpleCounterStats<Nunchaku>
 [HarmonyPatch(typeof(GremlinHorn), nameof(GremlinHorn.AfterDeath))]
 public sealed class GremlinHornStats : SimpleCounterStats<GremlinHorn>
 {
-    public override string Format => "Triggered {0} times on enemy death.";
+    public override string Format => "Triggered {0} times (drew cards + gained [gold]Energy[/gold]).";
     public static void Postfix(GremlinHorn __instance, Creature target)
     {
         if (target.Side == __instance.Owner.Creature.Side) return;

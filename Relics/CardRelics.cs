@@ -285,8 +285,11 @@ public sealed class SneckoEyeStats : IRelicStats
     public string RelicId => RelicIdHelper.Slugify(nameof(SneckoEye));
 
     public int CardsDrawn { get; set; }
-    public int CostReductions { get; set; }
-    public int CostIncreases { get; set; }
+    public int Cost0 { get; set; }
+    public int Cost1 { get; set; }
+    public int Cost2 { get; set; }
+    public int Cost3 { get; set; }
+    public int TotalDiscount { get; set; }
     public int TurnWhenObtained { get; set; }
     public int CombatWhenObtained { get; set; }
     public int? FrozenTurnCount { get; set; }
@@ -294,14 +297,16 @@ public sealed class SneckoEyeStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        var effectiveTurns = (FrozenTurnCount ?? totalTurns) - TurnWhenObtained;
-        var effectiveCombats = (FrozenCombatCount ?? totalCombats) - CombatWhenObtained;
-        if (effectiveTurns < 1) effectiveTurns = 1;
-        if (effectiveCombats < 1) effectiveCombats = 1;
+        var totalCards = Cost0 + Cost1 + Cost2 + Cost3;
+        var avgDiscount = totalCards > 0
+            ? ((float)TotalDiscount / totalCards).ToString("0.##", CultureInfo.InvariantCulture)
+            : "0";
 
-        var drawnPerTurn = ((float)CardsDrawn / effectiveTurns).ToString("0.#", CultureInfo.InvariantCulture);
-        return $"Drew {CardsDrawn} additional cards ({drawnPerTurn}/turn). " +
-               $"Cost reduced {CostReductions} times, increased {CostIncreases} times.";
+        return $"Drew {Fmt.Blue(CardsDrawn)} additional cards.\n" +
+               $"Card cost counts:\n" +
+               $"  0 energy: {Fmt.Blue(Cost0)}  1 energy: {Fmt.Blue(Cost1)}\n" +
+               $"  2 energy: {Fmt.Blue(Cost2)}  3 energy: {Fmt.Blue(Cost3)}\n" +
+               $"Average discount: {Fmt.Blue(avgDiscount)}";
     }
 
     public JsonObject Save()
@@ -309,8 +314,9 @@ public sealed class SneckoEyeStats : IRelicStats
         var obj = new JsonObject
         {
             ["cardsDrawn"] = CardsDrawn,
-            ["costReductions"] = CostReductions,
-            ["costIncreases"] = CostIncreases,
+            ["cost0"] = Cost0, ["cost1"] = Cost1,
+            ["cost2"] = Cost2, ["cost3"] = Cost3,
+            ["totalDiscount"] = TotalDiscount,
             ["turnObtained"] = TurnWhenObtained,
             ["combatObtained"] = CombatWhenObtained,
         };
@@ -322,8 +328,11 @@ public sealed class SneckoEyeStats : IRelicStats
     public void Load(JsonObject data)
     {
         CardsDrawn = data["cardsDrawn"]?.GetValue<int>() ?? 0;
-        CostReductions = data["costReductions"]?.GetValue<int>() ?? 0;
-        CostIncreases = data["costIncreases"]?.GetValue<int>() ?? 0;
+        Cost0 = data["cost0"]?.GetValue<int>() ?? 0;
+        Cost1 = data["cost1"]?.GetValue<int>() ?? 0;
+        Cost2 = data["cost2"]?.GetValue<int>() ?? 0;
+        Cost3 = data["cost3"]?.GetValue<int>() ?? 0;
+        TotalDiscount = data["totalDiscount"]?.GetValue<int>() ?? 0;
         TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
         CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
         FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
@@ -333,8 +342,8 @@ public sealed class SneckoEyeStats : IRelicStats
     public void Reset()
     {
         CardsDrawn = 0;
-        CostReductions = 0;
-        CostIncreases = 0;
+        Cost0 = Cost1 = Cost2 = Cost3 = 0;
+        TotalDiscount = 0;
         TurnWhenObtained = RelicStatsRegistry.TurnCount;
         CombatWhenObtained = RelicStatsRegistry.CombatCount;
         FrozenTurnCount = null;
@@ -382,13 +391,19 @@ public static class SneckoEyeConfusionPatch
         int originalCost = card.EnergyCost.Canonical;
         if (originalCost < 0) return;
 
-        // After the original Postfix, the card's cost has been set.
-        // Read the current cost to determine if it went up or down.
         int newCost = card.EnergyCost.GetWithModifiers(CostModifiers.Local);
+        if (newCost < 0) return;
 
-        if (newCost < originalCost)
-            stats.CostReductions++;
-        else if (newCost > originalCost)
-            stats.CostIncreases++;
+        // Track per-cost-tier
+        switch (newCost)
+        {
+            case 0: stats.Cost0++; break;
+            case 1: stats.Cost1++; break;
+            case 2: stats.Cost2++; break;
+            default: stats.Cost3++; break;
+        }
+
+        // Track discount (positive = saved energy, negative = cost more)
+        stats.TotalDiscount += originalCost - newCost;
     }
 }
