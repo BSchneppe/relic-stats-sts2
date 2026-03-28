@@ -7,12 +7,18 @@ namespace RelicStats.Core;
 public class RelicStatsConsoleCmd : AbstractConsoleCmd
 {
     public override string CmdName => "relicstats";
-    public override string Args => "[dump]";
-    public override string Description => "Dump all relic stat descriptions to console and log.";
+    public override string Args => "[dump|reset]";
+    public override string Description => "Dump or reset all relic stat descriptions.";
     public override bool IsNetworked => false;
 
     public override CmdResult Process(Player? issuingPlayer, string[] args)
     {
+        if (args.Length > 0 && args[0].Equals("reset", System.StringComparison.OrdinalIgnoreCase))
+        {
+            RelicStatsRegistry.ResetAll();
+            return new CmdResult(true, $"Reset all {RelicStatsRegistry.All.Count} relic stats.");
+        }
+
         RelicStatsRegistry.DumpAllDescriptions();
 
         var lines = new System.Text.StringBuilder();
