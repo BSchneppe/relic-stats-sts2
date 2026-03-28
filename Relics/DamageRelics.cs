@@ -150,14 +150,17 @@ public sealed class TingshaStats : SimpleCounterStats<Tingsha>
 }
 
 // --- ModifyDamageAdditive relics ---
+// These are called per-target, so we deduplicate by cardSource to avoid multi-counting.
 
 [HarmonyPatch(typeof(FakeStrikeDummy), nameof(FakeStrikeDummy.ModifyDamageAdditive))]
 public sealed class FakeStrikeDummyStats : SimpleCounterStats<FakeStrikeDummy>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to Strikes.";
-    public static void Postfix(decimal __result, FakeStrikeDummy __instance)
+    [System.ThreadStatic] private static CardModel? _lastCard;
+    public static void Postfix(decimal __result, FakeStrikeDummy __instance, CardModel? cardSource)
     {
-        if (__result == 0m) return;
+        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
+        _lastCard = cardSource;
         Track(__instance, s => s.Amount += (int)__result);
     }
 }
@@ -166,9 +169,11 @@ public sealed class FakeStrikeDummyStats : SimpleCounterStats<FakeStrikeDummy>
 public sealed class StrikeDummyStats : SimpleCounterStats<StrikeDummy>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to Strikes.";
-    public static void Postfix(decimal __result, StrikeDummy __instance)
+    [System.ThreadStatic] private static CardModel? _lastCard;
+    public static void Postfix(decimal __result, StrikeDummy __instance, CardModel? cardSource)
     {
-        if (__result == 0m) return;
+        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
+        _lastCard = cardSource;
         Track(__instance, s => s.Amount += (int)__result);
     }
 }
@@ -177,9 +182,11 @@ public sealed class StrikeDummyStats : SimpleCounterStats<StrikeDummy>
 public sealed class MiniatureCannonStats : SimpleCounterStats<MiniatureCannon>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to upgraded attacks.";
-    public static void Postfix(decimal __result, MiniatureCannon __instance)
+    [System.ThreadStatic] private static CardModel? _lastCard;
+    public static void Postfix(decimal __result, MiniatureCannon __instance, CardModel? cardSource)
     {
-        if (__result == 0m) return;
+        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
+        _lastCard = cardSource;
         Track(__instance, s => s.Amount += (int)__result);
     }
 }
@@ -188,9 +195,11 @@ public sealed class MiniatureCannonStats : SimpleCounterStats<MiniatureCannon>
 public sealed class MysticLighterStats : SimpleCounterStats<MysticLighter>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to enchanted attacks.";
-    public static void Postfix(decimal __result, MysticLighter __instance)
+    [System.ThreadStatic] private static CardModel? _lastCard;
+    public static void Postfix(decimal __result, MysticLighter __instance, CardModel? cardSource)
     {
-        if (__result == 0m) return;
+        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
+        _lastCard = cardSource;
         Track(__instance, s => s.Amount += (int)__result);
     }
 }

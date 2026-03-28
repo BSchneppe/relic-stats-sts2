@@ -7,6 +7,7 @@ using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
@@ -377,11 +378,11 @@ public static class SneckoEyeDrawPatch
 public static class SneckoEyeConfusionPatch
 {
     public static void Postfix(MegaCrit.Sts2.Core.Models.Powers.ConfusedPower __instance,
-        CardModel card, bool fromHandDraw)
+        PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw)
     {
         if (card.Owner == null) return;
+        if (card.Owner != __instance.Owner.Player) return;
 
-        // Find SneckoEye on the card owner -- Confused is applied by SneckoEye
         var sneckoEye = card.Owner.GetRelic<SneckoEye>();
         if (sneckoEye == null) return;
 
@@ -391,7 +392,7 @@ public static class SneckoEyeConfusionPatch
         int originalCost = card.EnergyCost.Canonical;
         if (originalCost < 0) return;
 
-        int newCost = card.EnergyCost.GetWithModifiers(CostModifiers.Local);
+        int newCost = card.EnergyCost.GetResolved();
         if (newCost < 0) return;
 
         // Track per-cost-tier
