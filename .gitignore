@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+packages/
+
+# Godot
+.godot/
+*.pck
+
+# IDE
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db

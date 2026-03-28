@@ -1,0 +1,45 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <RootNamespace>RelicStats</RootNamespace>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+
+    <!-- Override these with: dotnet build -p:STS2GameDir=/path/to/game -p:STS2ModsDir=/path/to/mods -->
+    <!-- macOS -->
+    <STS2GameDir Condition="'$(STS2GameDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">$(HOME)/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_arm64</STS2GameDir>
+    <STS2ModsDir Condition="'$(STS2ModsDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' == 'true'">$(HOME)/Library/Application Support/Steam/steamapps/common/Slay the Spire 2/SlayTheSpire2.app/Contents/MacOS/mods</STS2ModsDir>
+    <!-- Windows -->
+    <STS2GameDir Condition="'$(STS2GameDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">C:/Program Files (x86)/Steam/steamapps/common/Slay the Spire 2/data</STS2GameDir>
+    <STS2ModsDir Condition="'$(STS2ModsDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">C:/Program Files (x86)/Steam/steamapps/common/Slay the Spire 2/mods</STS2ModsDir>
+    <!-- Linux -->
+    <STS2GameDir Condition="'$(STS2GameDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">$(HOME)/.steam/steam/steamapps/common/Slay the Spire 2/data</STS2GameDir>
+    <STS2ModsDir Condition="'$(STS2ModsDir)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">$(HOME)/.steam/steam/steamapps/common/Slay the Spire 2/mods</STS2ModsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="sts2">
+      <HintPath>$(STS2GameDir)/sts2.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(STS2GameDir)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GodotSharp">
+      <HintPath>$(STS2GameDir)/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Alchyr.Sts2.BaseLib" Version="0.1.9" PrivateAssets="All" />
+    <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*" />
+  </ItemGroup>
+
+  <Target Name="CopyModFiles" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(STS2ModsDir)/RelicStats" />
+    <Copy SourceFiles="RelicStats.json" DestinationFolder="$(STS2ModsDir)/RelicStats" />
+  </Target>
+</Project>
