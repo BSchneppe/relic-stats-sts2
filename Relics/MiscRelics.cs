@@ -779,3 +779,36 @@ public sealed class PendulumStats : SimpleCounterStats<Pendulum>
         Track(__instance, s => s.Amount++);
     }
 }
+
+// ChosenCheese: gains max HP at end of combat
+[HarmonyPatch(typeof(ChosenCheese), nameof(ChosenCheese.AfterCombatEnd))]
+public sealed class ChosenCheeseStats : SimpleCounterStats<ChosenCheese>
+{
+    public override string Format => "Gained {0} max HP.";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(ChosenCheese __instance) =>
+        Track(__instance, s => s.Amount += __instance.DynamicVars["MaxHp"].IntValue);
+}
+
+// BookOfFiveRings: heals when adding cards to deck
+[HarmonyPatch(typeof(BookOfFiveRings), nameof(BookOfFiveRings.AfterCardChangedPiles))]
+public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
+{
+    public override string Format => "Healed {0} HP from adding cards.";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+
+    [System.ThreadStatic] private static int _prevCardsAdded;
+
+    public static void Prefix(BookOfFiveRings __instance)
+    {
+        _prevCardsAdded = (int)(__instance.DynamicVars["CardsAddedSinceLastTrigger"]?.BaseValue ?? 0);
+    }
+
+    public static void Postfix(BookOfFiveRings __instance)
+    {
+        // Trigger happened when counter wrapped to 0
+        var current = (int)(__instance.DynamicVars["CardsAddedSinceLastTrigger"]?.BaseValue ?? 0);
+        if (current < _prevCardsAdded)
+            Track(__instance, s => s.Amount += __instance.DynamicVars["Heal"].IntValue);
+    }
+}

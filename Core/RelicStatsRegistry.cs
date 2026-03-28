@@ -45,4 +45,21 @@ public static class RelicStatsRegistry
             stats.Reset();
         }
     }
+
+    /// <summary>
+    /// Dumps all registered relic descriptions to the log.
+    /// Call from debug console or after loading a save with relics.
+    /// </summary>
+    public static void DumpAllDescriptions()
+    {
+        MainFile.Logger.Info($"=== Relic Stats Dump (Turn {TurnCount}, Combat {CombatCount}) ===");
+        foreach (var (id, stats) in _stats)
+        {
+            var desc = stats.GetDescription(TurnCount, CombatCount);
+            // Strip BBCode for log readability
+            var plain = System.Text.RegularExpressions.Regex.Replace(desc, @"\[/?[^\]]+\]", "");
+            MainFile.Logger.Info($"  [{id}] {plain}");
+        }
+        MainFile.Logger.Info($"=== End Dump ({_stats.Count} relics) ===");
+    }
 }

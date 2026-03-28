@@ -19,6 +19,7 @@ public static class LoadRunSavePatch
     public static void Postfix()
     {
         StatsPersistence.Load(isMultiplayer: false);
+        RelicStatsRegistry.DumpAllDescriptions();
     }
 }
 
