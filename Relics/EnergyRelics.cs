@@ -162,7 +162,7 @@ public sealed class PhilosophersStoneStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Gave enemies {Fmt.Blue(StrengthGiven)} {Fmt.Strength}.";
     }
 
@@ -257,7 +257,7 @@ public sealed class BlessedAntlerStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Added {Fmt.Blue(DazedAdded)} Dazed cards.";
     }
 
@@ -341,7 +341,7 @@ public sealed class BloodSoakedRoseStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Added {Fmt.Blue(EnthrallAdded)} Enthralled curses.";
     }
 
@@ -423,7 +423,7 @@ public sealed class BreadStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGained)}. " +
+        return $"Generated {Fmt.Blue(EnergyGained)} [gold]Energy[/gold]. " +
                $"Lost {Fmt.Blue(EnergyLost)} [gold]Energy[/gold] on turn 1.";
     }
 
@@ -507,7 +507,7 @@ public sealed class EctoplasmStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Blocked {Fmt.Blue(GoldBlocked)} {Fmt.GoldKw}.";
     }
 
@@ -590,7 +590,7 @@ public sealed class SealOfGoldStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Spent {Fmt.Blue(GoldSpent)} {Fmt.GoldKw}.";
     }
 
@@ -665,7 +665,7 @@ public sealed class SozuStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Blocked {Fmt.Blue(PotionsBlocked)} potions.";
     }
 
@@ -748,7 +748,7 @@ public sealed class SpikedGauntletsStats : IRelicStats
 
     public string GetDescription(int totalTurns, int totalCombats)
     {
-        return $"Generated {Fmt.EnergyIcon(EnergyGenerated)}. " +
+        return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Increased power costs {Fmt.Blue(PowerCostIncrease)} times.";
     }
 
