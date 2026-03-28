@@ -492,6 +492,92 @@ public sealed class BreadStats : IRelicStats
     }
 }
 
+// ── Additional simple energy relics ──────────────────────────────────
+
+// Chandelier: gains energy on round 3
+[HarmonyPatch(typeof(Chandelier), nameof(Chandelier.AfterSideTurnStart))]
+public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public static void Postfix(Chandelier __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber != 3) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
+// Candelabra: gains energy on round 2
+[HarmonyPatch(typeof(Candelabra), nameof(Candelabra.AfterSideTurnStart))]
+public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public static void Postfix(Candelabra __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber != 2) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
+// VeryHotCocoa: gains energy turn 1
+[HarmonyPatch(typeof(VeryHotCocoa), nameof(VeryHotCocoa.AfterSideTurnStart))]
+public sealed class VeryHotCocoaStats : SimpleCounterStats<VeryHotCocoa>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public static void Postfix(VeryHotCocoa __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
+// FakeVenerableTeaSet: gains energy in first combat after rest
+[HarmonyPatch(typeof(FakeVenerableTeaSet), nameof(FakeVenerableTeaSet.AfterEnergyReset))]
+public sealed class FakeVenerableTeaSetStats : SimpleCounterStats<FakeVenerableTeaSet>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+
+    public static void Prefix(FakeVenerableTeaSet __instance, Player player, out bool __state) =>
+        __state = __instance.Owner == player && __instance.GainEnergyInNextCombat;
+
+    public static void Postfix(FakeVenerableTeaSet __instance, bool __state)
+    {
+        if (!__state) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
+// VenerableTeaSet: gains energy in first combat after rest
+[HarmonyPatch(typeof(VenerableTeaSet), nameof(VenerableTeaSet.AfterEnergyReset))]
+public sealed class VenerableTeaSetStats : SimpleCounterStats<VenerableTeaSet>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+
+    public static void Prefix(VenerableTeaSet __instance, Player player, out bool __state) =>
+        __state = __instance.Owner == player && __instance.GainEnergyInNextCombat;
+
+    public static void Postfix(VenerableTeaSet __instance, bool __state)
+    {
+        if (!__state) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
+// PaelsFlesh: gains energy from round 3+
+[HarmonyPatch(typeof(PaelsFlesh), nameof(PaelsFlesh.AfterSideTurnStart))]
+public sealed class PaelsFleshStats : SimpleCounterStats<PaelsFlesh>
+{
+    public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public static void Postfix(PaelsFlesh __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber < 3) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+    }
+}
+
 // Ectoplasm: +1 energy, blocks all gold gains
 [HarmonyPatch]
 public sealed class EctoplasmStats : IRelicStats

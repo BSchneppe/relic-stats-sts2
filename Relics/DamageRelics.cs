@@ -203,3 +203,77 @@ public sealed class MysticLighterStats : SimpleCounterStats<MysticLighter>
         Track(__instance, s => s.Amount += (int)__result);
     }
 }
+
+// --- Additional damage relics ---
+
+// ForgottenSoul: deals damage to a random enemy on exhaust
+[HarmonyPatch(typeof(ForgottenSoul), nameof(ForgottenSoul.AfterCardExhausted))]
+public sealed class ForgottenSoulStats : SimpleCounterStats<ForgottenSoul>
+{
+    public override string Format => "Dealt {0} [gold]Damage[/gold].";
+    public static void Postfix(ForgottenSoul __instance, CardModel card)
+    {
+        if (card.Owner != __instance.Owner) return;
+        if (!__instance.Owner.Creature.CombatState.HittableEnemies.Any()) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Damage.IntValue);
+    }
+}
+
+// LostWisp: deals damage to all enemies when a Power is played
+[HarmonyPatch(typeof(LostWisp), nameof(LostWisp.AfterCardPlayed))]
+public sealed class LostWispStats : SimpleCounterStats<LostWisp>
+{
+    public override string Format => "Dealt {0} [gold]Damage[/gold].";
+    public static void Postfix(LostWisp __instance, CardPlay cardPlay)
+    {
+        if (cardPlay.Card.Owner != __instance.Owner) return;
+        if (!CombatManager.Instance.IsInProgress) return;
+        if (cardPlay.Card.Type != CardType.Power) return;
+        Track(__instance, s => s.Amount +=
+            __instance.DynamicVars.Damage.IntValue *
+            __instance.Owner.Creature.CombatState.HittableEnemies.Count);
+    }
+}
+
+// ParryingShield: deals damage to a random enemy at turn end if block >= threshold
+[HarmonyPatch(typeof(ParryingShield), nameof(ParryingShield.AfterTurnEnd))]
+public sealed class ParryingShieldStats : SimpleCounterStats<ParryingShield>
+{
+    public override string Format => "Dealt {0} [gold]Damage[/gold].";
+    public static void Postfix(ParryingShield __instance, CombatSide side)
+    {
+        if (side != CombatSide.Player) return;
+        if ((decimal)__instance.Owner.Creature.Block < __instance.DynamicVars.Block.BaseValue) return;
+        if (!__instance.Owner.Creature.CombatState.HittableEnemies.Any()) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Damage.IntValue);
+    }
+}
+
+// TheBoot: boosts low damage hits to 5
+[HarmonyPatch(typeof(TheBoot), nameof(TheBoot.ModifyHpLostBeforeOsty))]
+public sealed class TheBootStats : SimpleCounterStats<TheBoot>
+{
+    public override string Format => "Boosted damage to 5 {0} times.";
+    public static void Postfix(decimal __result, TheBoot __instance,
+        Creature? dealer, decimal amount, ValueProp props)
+    {
+        if (dealer != __instance.Owner.Creature) return;
+        if (!props.HasFlag(ValueProp.Move) || props.HasFlag(ValueProp.Unpowered)) return;
+        if (amount < 1m) return;
+        if (amount >= __instance.DynamicVars["DamageMinimum"].BaseValue) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// ThrowingAxe: doubles first card play each combat
+[HarmonyPatch(typeof(ThrowingAxe), nameof(ThrowingAxe.ModifyCardPlayCount))]
+public sealed class ThrowingAxeStats : SimpleCounterStats<ThrowingAxe>
+{
+    public override string Format => "Doubled first card {0} times.";
+    public static void Postfix(int __result, ThrowingAxe __instance, CardModel card, int playCount)
+    {
+        if (__result <= playCount) return;
+        if (card.Owner != __instance.Owner) return;
+        Track(__instance, s => s.Amount++);
+    }
+}

@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
+using MegaCrit.Sts2.Core.ValueProps;
 using RelicStats.Core;
 
 namespace RelicStats.Relics;
@@ -810,5 +811,475 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
         // Trigger happened when CardsAdded incremented and modulo wrapped to 0
         if (__instance.CardsAdded > _prevCardsAdded && __instance.CardsAdded % __instance.DynamicVars.Cards.IntValue == 0)
             Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+    }
+}
+
+// BagOfMarbles: applies Vulnerable to all enemies at combat start
+[HarmonyPatch(typeof(BagOfMarbles), nameof(BagOfMarbles.BeforeSideTurnStart))]
+public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
+{
+    public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
+    public static void Postfix(BagOfMarbles __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// Bellows: upgrades hand on turn 1
+[HarmonyPatch(typeof(Bellows), nameof(Bellows.AfterPlayerTurnStart))]
+public sealed class BellowsStats : SimpleCounterStats<Bellows>
+{
+    public override string Format => "Upgraded {0} hands.";
+    public static void Postfix(Bellows __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (player.Creature.CombatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// BronzeScales: applies Thorns at combat start
+[HarmonyPatch(typeof(BronzeScales), nameof(BronzeScales.AfterRoomEntered))]
+public sealed class BronzeScalesStats : SimpleCounterStats<BronzeScales>
+{
+    public override string Format => "Applied {0} [gold]Thorns[/gold].";
+    public static void Postfix(BronzeScales __instance, AbstractRoom room)
+    {
+        if (room is not CombatRoom) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars["ThornsPower"].IntValue);
+    }
+}
+
+// Crossbow: generates a free attack each turn
+[HarmonyPatch(typeof(Crossbow), nameof(Crossbow.AfterSideTurnStart))]
+public sealed class CrossbowStats : SimpleCounterStats<Crossbow>
+{
+    public override string Format => "Generated {0} free attacks.";
+    public static void Postfix(Crossbow __instance, CombatSide side)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// DataDisk: applies Focus at combat start
+[HarmonyPatch(typeof(DataDisk), nameof(DataDisk.AfterRoomEntered))]
+public sealed class DataDiskStats : SimpleCounterStats<DataDisk>
+{
+    public override string Format => "Applied {0} [gold]Focus[/gold].";
+    public static void Postfix(DataDisk __instance, AbstractRoom room)
+    {
+        if (room is not CombatRoom) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars["FocusPower"].IntValue);
+    }
+}
+
+// EmberTea: applies Strength at combat start (limited uses)
+[HarmonyPatch(typeof(EmberTea), nameof(EmberTea.AfterRoomEntered))]
+public sealed class EmberTeaStats : SimpleCounterStats<EmberTea>
+{
+    public override string Format => "Applied {0} [gold]Strength[/gold].";
+    private static bool _willApply;
+
+    public static void Prefix(EmberTea __instance, AbstractRoom room)
+    {
+        _willApply = !__instance.IsUsedUp && room is CombatRoom;
+    }
+
+    public static void Postfix(EmberTea __instance)
+    {
+        if (!_willApply) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Strength.IntValue);
+    }
+}
+
+// FakeSneckoEye: applies Confused at combat start
+[HarmonyPatch(typeof(FakeSneckoEye), nameof(FakeSneckoEye.BeforeCombatStart))]
+public sealed class FakeSneckoEyeStats : SimpleCounterStats<FakeSneckoEye>
+{
+    public override string Format => "Applied [gold]Confused[/gold] {0} times.";
+    public static void Postfix(FakeSneckoEye __instance) =>
+        Track(__instance, s => s.Amount++);
+}
+
+// FencingManual: gains Forge on turn 1
+[HarmonyPatch(typeof(FencingManual), nameof(FencingManual.AfterSideTurnStart))]
+public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
+{
+    public override string Format => "Gained {0} [gold]Forge[/gold].";
+    public static void Postfix(FencingManual __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Forge.IntValue);
+    }
+}
+
+// FuneraryMask: generates Soul cards on turn 1
+[HarmonyPatch(typeof(FuneraryMask), nameof(FuneraryMask.AfterSideTurnStart))]
+public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
+{
+    public override string Format => "Generated {0} Soul cards.";
+    public static void Postfix(FuneraryMask __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != CombatSide.Player) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
+}
+
+// GamePiece: draws cards when Powers are played
+[HarmonyPatch(typeof(GamePiece), nameof(GamePiece.AfterCardPlayed))]
+public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
+{
+    public override string Format => "Drew {0} cards from Powers.";
+    public static void Postfix(GamePiece __instance, CardPlay cardPlay)
+    {
+        if (cardPlay.Card.Owner != __instance.Owner) return;
+        if (cardPlay.Card.Type != CardType.Power) return;
+        if (!CombatManager.Instance.IsInProgress) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
+}
+
+// GoldPlatedCables: doubles first orb's passive trigger
+[HarmonyPatch(typeof(GoldPlatedCables), nameof(GoldPlatedCables.ModifyOrbPassiveTriggerCounts))]
+public sealed class GoldPlatedCablesStats : SimpleCounterStats<GoldPlatedCables>
+{
+    public override string Format => "Doubled first orb passive {0} times.";
+    public static void Postfix(GoldPlatedCables __instance, OrbModel orb, int __result, int triggerCount)
+    {
+        if (__result <= triggerCount) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// HandDrill: applies Vulnerable when block is broken
+[HarmonyPatch(typeof(HandDrill), nameof(HandDrill.AfterDamageGiven))]
+public sealed class HandDrillStats : SimpleCounterStats<HandDrill>
+{
+    public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
+    public static void Postfix(HandDrill __instance, Creature? dealer, DamageResult result)
+    {
+        if (dealer != __instance.Owner.Creature && dealer?.PetOwner != __instance.Owner) return;
+        if (!result.WasBlockBroken) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// HelicalDart: gains Dexterity from playing Shivs
+[HarmonyPatch(typeof(HelicalDart), nameof(HelicalDart.AfterCardPlayed))]
+public sealed class HelicalDartStats : SimpleCounterStats<HelicalDart>
+{
+    public override string Format => "Gained {0} [gold]Dexterity[/gold] from Shivs.";
+    public static void Postfix(HelicalDart __instance, CardPlay cardPlay)
+    {
+        if (cardPlay.Card.Owner != __instance.Owner) return;
+        if (!cardPlay.Card.Tags.Contains(CardTag.Shiv)) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Dexterity.IntValue);
+    }
+}
+
+// MusicBox: copies first attack each turn as Ethereal
+[HarmonyPatch(typeof(MusicBox), nameof(MusicBox.AfterCardPlayed))]
+public sealed class MusicBoxStats : SimpleCounterStats<MusicBox>
+{
+    public override string Format => "Copied {0} attacks as [gold]Ethereal[/gold].";
+    private static readonly System.Reflection.FieldInfo _cardBeingPlayedField =
+        AccessTools.Field(typeof(MusicBox), "_cardBeingPlayed");
+    private static bool _willCopy;
+
+    public static void Prefix(MusicBox __instance, CardPlay cardPlay)
+    {
+        // The method copies when cardPlay.Card == CardBeingPlayed (set in BeforeCardPlayed)
+        _willCopy = cardPlay.Card == (CardModel?)_cardBeingPlayedField.GetValue(__instance);
+    }
+
+    public static void Postfix(MusicBox __instance)
+    {
+        if (!_willCopy) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// OddlySmoothStone: applies Dexterity at combat start
+[HarmonyPatch(typeof(OddlySmoothStone), nameof(OddlySmoothStone.AfterRoomEntered))]
+public sealed class OddlySmoothStoneStats : SimpleCounterStats<OddlySmoothStone>
+{
+    public override string Format => "Applied {0} [gold]Dexterity[/gold].";
+    public static void Postfix(OddlySmoothStone __instance, AbstractRoom room)
+    {
+        if (room is not CombatRoom) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Dexterity.IntValue);
+    }
+}
+
+// ReptileTrinket: gains temporary Strength from potions
+[HarmonyPatch(typeof(ReptileTrinket), nameof(ReptileTrinket.AfterPotionUsed))]
+public sealed class ReptileTrinketStats : SimpleCounterStats<ReptileTrinket>
+{
+    public override string Format => "Gained {0} temporary [gold]Strength[/gold] from potions.";
+    public static void Postfix(ReptileTrinket __instance, PotionModel potion)
+    {
+        if (potion.Owner != __instance.Owner) return;
+        if (!CombatManager.Instance.IsInProgress) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Strength.IntValue);
+    }
+}
+
+// RunicCapacitor: adds orb slots on turn 1
+[HarmonyPatch(typeof(RunicCapacitor), nameof(RunicCapacitor.AfterSideTurnStart))]
+public sealed class RunicCapacitorStats : SimpleCounterStats<RunicCapacitor>
+{
+    public override string Format => "Added {0} orb slots.";
+    public static void Postfix(RunicCapacitor __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Repeat.IntValue);
+    }
+}
+
+// SparklingRouge: gains Strength and Dexterity on block clear in round 3
+[HarmonyPatch(typeof(SparklingRouge), nameof(SparklingRouge.AfterBlockCleared))]
+public sealed class SparklingRougeStats : SimpleCounterStats<SparklingRouge>
+{
+    public override string Format => "Gained [gold]Strength[/gold]+[gold]Dexterity[/gold] {0} times.";
+    public static void Postfix(SparklingRouge __instance, Creature creature)
+    {
+        if (creature != __instance.Owner.Creature) return;
+        if (creature.CombatState.RoundNumber != 3) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// StoneCracker: upgrades cards in boss combats
+[HarmonyPatch(typeof(StoneCracker), nameof(StoneCracker.AfterRoomEntered))]
+public sealed class StoneCrackerStats : SimpleCounterStats<StoneCracker>
+{
+    public override string Format => "Upgraded {0} cards in boss combats.";
+    public static void Postfix(StoneCracker __instance, AbstractRoom room)
+    {
+        if (room.RoomType != RoomType.Boss) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
+}
+
+// SwordOfJade: applies Strength at combat start
+[HarmonyPatch(typeof(SwordOfJade), nameof(SwordOfJade.AfterRoomEntered))]
+public sealed class SwordOfJadeStats : SimpleCounterStats<SwordOfJade>
+{
+    public override string Format => "Applied {0} [gold]Strength[/gold].";
+    public static void Postfix(SwordOfJade __instance, AbstractRoom room)
+    {
+        if (room is not CombatRoom) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Strength.IntValue);
+    }
+}
+
+// SwordOfStone: tracks elites defeated toward transformation
+[HarmonyPatch(typeof(SwordOfStone), nameof(SwordOfStone.AfterCombatVictory))]
+public sealed class SwordOfStoneStats : SimpleCounterStats<SwordOfStone>
+{
+    public override string Format => "Defeated {0} elites.";
+    public static void Postfix(SwordOfStone __instance, CombatRoom room)
+    {
+        if (room.RoomType != RoomType.Elite) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// SymbioticVirus: channels Dark orbs on turn 1
+[HarmonyPatch(typeof(SymbioticVirus), nameof(SymbioticVirus.AfterSideTurnStart))]
+public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
+{
+    public override string Format => "Channeled {0} [gold]Dark[/gold] orbs.";
+    public static void Postfix(SymbioticVirus __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars["Dark"].IntValue);
+    }
+}
+
+// ToastyMittens: gains Strength and exhausts a card each turn
+[HarmonyPatch(typeof(ToastyMittens), nameof(ToastyMittens.BeforeHandDraw))]
+public sealed class ToastyMittensStats : SimpleCounterStats<ToastyMittens>
+{
+    public override string Format => "Gained {0} [gold]Strength[/gold] and exhausted cards.";
+    public static void Postfix(ToastyMittens __instance, Player player)
+    {
+        if (player != __instance.Owner.Creature.Player) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Strength.IntValue);
+    }
+}
+
+// WarHammer: upgrades cards after elite victories
+[HarmonyPatch(typeof(WarHammer), nameof(WarHammer.AfterCombatVictory))]
+public sealed class WarHammerStats : SimpleCounterStats<WarHammer>
+{
+    public override string Format => "Upgraded {0} cards after elite combats.";
+    public static void Postfix(WarHammer __instance, CombatRoom room)
+    {
+        if (room.RoomType != RoomType.Elite) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
+}
+
+// WongosMysteryTicket: tracks combats toward relic reward
+[HarmonyPatch(typeof(WongosMysteryTicket), nameof(WongosMysteryTicket.AfterCombatEnd))]
+public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryTicket>
+{
+    public override string Format => "Completed {0} combats toward relic.";
+    public static void Postfix(WongosMysteryTicket __instance) =>
+        Track(__instance, s => s.Amount++);
+}
+
+// BigHat: generates Ethereal cards on turn 1
+[HarmonyPatch(typeof(BigHat), nameof(BigHat.AfterSideTurnStart))]
+public sealed class BigHatStats : SimpleCounterStats<BigHat>
+{
+    public override string Format => "Generated {0} [gold]Ethereal[/gold] cards.";
+    public static void Postfix(BigHat __instance, CombatSide side, CombatState combatState)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
+}
+
+// BingBong: duplicates cards added to deck
+[HarmonyPatch(typeof(BingBong), nameof(BingBong.AfterCardChangedPiles))]
+public sealed class BingBongStats : SimpleCounterStats<BingBong>
+{
+    public override string Format => "Duplicated {0} cards.";
+    private static readonly System.Reflection.FieldInfo _cardsToSkipField =
+        AccessTools.Field(typeof(BingBong), "_cardsToSkip");
+    private static bool _willDuplicate;
+
+    public static void Prefix(BingBong __instance, CardModel card, AbstractModel? source)
+    {
+        _willDuplicate = false;
+        CardPile? pile = card.Pile;
+        if (pile == null || pile.Type != PileType.Deck) return;
+        if (card.Owner != __instance.Owner) return;
+        if (source != null) return;
+        var skip = (System.Collections.Generic.HashSet<CardModel>?)_cardsToSkipField.GetValue(__instance);
+        if (skip != null && skip.Contains(card)) return;
+        _willDuplicate = true;
+    }
+
+    public static void Postfix(BingBong __instance)
+    {
+        if (!_willDuplicate) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// BoneTea: upgrades hand on turn 1 (limited uses)
+[HarmonyPatch(typeof(BoneTea), nameof(BoneTea.AfterSideTurnStart))]
+public sealed class BoneTeaStats : SimpleCounterStats<BoneTea>
+{
+    public override string Format => "Upgraded {0} hands.";
+    private static bool _willUpgrade;
+
+    public static void Prefix(BoneTea __instance, CombatSide side, CombatState combatState)
+    {
+        _willUpgrade = !__instance.IsUsedUp
+            && side == __instance.Owner.Creature.Side
+            && combatState.RoundNumber <= 1;
+    }
+
+    public static void Postfix(BoneTea __instance)
+    {
+        if (!_willUpgrade) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// VexingPuzzlebox: generates a free card on turn 1
+[HarmonyPatch(typeof(VexingPuzzlebox), nameof(VexingPuzzlebox.AfterPlayerTurnStart))]
+public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>
+{
+    public override string Format => "Generated {0} free cards.";
+    public static void Postfix(VexingPuzzlebox __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (__instance.Owner.Creature.CombatState.RoundNumber != 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// ChoicesParadox: generates cards to choose from on turn 1
+[HarmonyPatch(typeof(ChoicesParadox), nameof(ChoicesParadox.AfterPlayerTurnStart))]
+public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
+{
+    public override string Format => "Generated {0} cards to choose from.";
+    public static void Postfix(ChoicesParadox __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (__instance.Owner.Creature.CombatState.RoundNumber != 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// JeweledMask: draws a free Power on turn 1
+[HarmonyPatch(typeof(JeweledMask), nameof(JeweledMask.BeforeHandDraw))]
+public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
+{
+    public override string Format => "Drew {0} free Powers.";
+    public static void Postfix(JeweledMask __instance, Player player, CombatState combatState)
+    {
+        if (player != __instance.Owner) return;
+        if (combatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// VelvetChoker: tracks times card limit was hit
+[HarmonyPatch(typeof(VelvetChoker), nameof(VelvetChoker.AfterCardPlayed))]
+public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
+{
+    public override string Format => "Hit card limit {0} times.";
+    private static readonly System.Reflection.FieldInfo _cardsPlayedField =
+        AccessTools.Field(typeof(VelvetChoker), "_cardsPlayedThisTurn");
+
+    public static void Postfix(VelvetChoker __instance, CardPlay cardPlay)
+    {
+        if (cardPlay.Card.Owner != __instance.Owner) return;
+        int cardsPlayed = (int)_cardsPlayedField.GetValue(__instance)!;
+        if (cardsPlayed != __instance.DynamicVars.Cards.IntValue) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// DiamondDiadem: applies DiamondDiademPower when few cards played
+[HarmonyPatch(typeof(DiamondDiadem), nameof(DiamondDiadem.BeforeTurnEnd))]
+public sealed class DiamondDiademStats : SimpleCounterStats<DiamondDiadem>
+{
+    public override string Format => "Applied [gold]DiamondDiademPower[/gold] {0} times.";
+    private static readonly System.Reflection.FieldInfo _cardsPlayedField =
+        AccessTools.Field(typeof(DiamondDiadem), "_cardsPlayedThisTurn");
+
+    public static void Postfix(DiamondDiadem __instance, CombatSide side)
+    {
+        if (side != __instance.Owner.Creature.Side) return;
+        int cardsPlayed = (int)_cardsPlayedField.GetValue(__instance)!;
+        if ((decimal)cardsPlayed > __instance.DynamicVars["CardThreshold"].BaseValue) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// BeltBuckle: grants Dexterity when no potions held
+[HarmonyPatch(typeof(BeltBuckle), nameof(BeltBuckle.BeforeCombatStart))]
+public sealed class BeltBuckleStats : SimpleCounterStats<BeltBuckle>
+{
+    public override string Format => "Granted {0} [gold]Dexterity[/gold].";
+    public static void Postfix(BeltBuckle __instance)
+    {
+        if (__instance.Owner.Potions.Any()) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Dexterity.IntValue);
     }
 }

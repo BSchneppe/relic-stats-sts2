@@ -408,3 +408,95 @@ public static class SneckoEyeConfusionPatch
         stats.TotalDiscount += originalCost - newCost;
     }
 }
+
+// ── Draw-on-play-count relics ─────────────────────────────────────────
+
+// IronClub: draws 1 card every 4 cards played
+[HarmonyPatch(typeof(IronClub), nameof(IronClub.AfterCardPlayed))]
+public sealed class IronClubStats : SimpleCounterStats<IronClub>
+{
+    public override string Format => "Drew {0} cards.";
+    public static void Postfix(IronClub __instance, CardPlay cardPlay)
+    {
+        if (cardPlay.Card.Owner != __instance.Owner) return;
+        if (__instance.CardsPlayed % __instance.DynamicVars.Cards.IntValue != 0) return;
+        if (!CombatManager.Instance.IsInProgress) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// ── Draw-on-exhaust relics ────────────────────────────────────────────
+
+// JossPaper: draws cards every 5 exhausts
+[HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterCardExhausted))]
+public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
+{
+    public override string Format => "Drew {0} cards.";
+    public static void Postfix(JossPaper __instance, CardModel card, bool causedByEthereal)
+    {
+        if (card.Owner != __instance.Owner) return;
+        if (causedByEthereal) return;
+        // CardsExhausted was already incremented synchronously before the async draw.
+        // A draw triggers when CardsExhausted reaches the threshold (5).
+        int threshold = __instance.DynamicVars["ExhaustAmount"].IntValue;
+        if (__instance.CardsExhausted >= threshold)
+        {
+            int drawn = __instance.CardsExhausted / threshold;
+            Track(__instance, s => s.Amount += drawn);
+        }
+    }
+}
+
+// ── Auto-play relics ──────────────────────────────────────────────────
+
+// HistoryCourse: auto-replays last Attack/Skill from previous turn
+[HarmonyPatch(typeof(HistoryCourse), nameof(HistoryCourse.AfterPlayerTurnStartEarly))]
+public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
+{
+    public override string Format => "Auto-replayed {0} cards.";
+    public static void Postfix(HistoryCourse __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (player.Creature.CombatState.RoundNumber == 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// WhisperingEarring: auto-plays cards from hand on turn 1
+[HarmonyPatch(typeof(WhisperingEarring), nameof(WhisperingEarring.BeforePlayPhaseStart))]
+public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarring>
+{
+    public override string Format => "Triggered {0} times.";
+    public static void Postfix(WhisperingEarring __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (player.Creature.CombatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// ── Card reward modifier relics ───────────────────────────────────────
+
+// LastingCandy: adds an extra Power card to rewards every other combat
+[HarmonyPatch(typeof(LastingCandy), nameof(LastingCandy.TryModifyCardRewardOptions))]
+public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
+{
+    public override string Format => "Added {0} extra Power cards to rewards.";
+    public static void Postfix(LastingCandy __instance, Player player, bool __result)
+    {
+        if (!__result) return;
+        Track(__instance, s => s.Amount++);
+    }
+}
+
+// SilverCrucible: upgrades all card rewards (limited uses)
+[HarmonyPatch(typeof(SilverCrucible), nameof(SilverCrucible.TryModifyCardRewardOptionsLate))]
+public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
+{
+    public override string Format => "Upgraded card rewards {0} times.";
+    public static void Postfix(SilverCrucible __instance, Player player, bool __result)
+    {
+        if (!__result) return;
+        Track(__instance, s => s.Amount++);
+    }
+}

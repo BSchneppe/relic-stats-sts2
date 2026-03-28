@@ -6,6 +6,7 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
@@ -193,5 +194,62 @@ public sealed class TungstenRodStats : SimpleCounterStats<TungstenRod>
         int prevented = (int)(amount - __result);
         if (prevented <= 0) return;
         Track(__instance, s => s.Amount += prevented);
+    }
+}
+
+// --- Turn-based healing (fake variant) ---
+
+[HarmonyPatch(typeof(FakeBloodVial), nameof(FakeBloodVial.AfterPlayerTurnStartLate))]
+public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
+{
+    public override string Format => "Healed {0} HP.";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(FakeBloodVial __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        if (player.Creature.CombatState.RoundNumber > 1) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+    }
+}
+
+// --- Room-based healing (unknown rooms) ---
+
+[HarmonyPatch(typeof(Planisphere), nameof(Planisphere.AfterRoomEntered))]
+public sealed class PlanisphereStats : SimpleCounterStats<Planisphere>
+{
+    public override string Format => "Healed {0} HP.";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(Planisphere __instance)
+    {
+        if (__instance.Owner.Creature.IsDead) return;
+        var currentMapPoint = __instance.Owner.RunState.CurrentMapPoint;
+        if (currentMapPoint == null || currentMapPoint.PointType != MapPointType.Unknown) return;
+        Track(__instance, s => s.Amount += (int)__instance.DynamicVars.Heal.BaseValue);
+    }
+}
+
+// --- Max HP gain relics ---
+
+[HarmonyPatch(typeof(DragonFruit), nameof(DragonFruit.AfterGoldGained))]
+public sealed class DragonFruitStats : SimpleCounterStats<DragonFruit>
+{
+    public override string Format => "Gained {0} [green]Max HP[/green].";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(DragonFruit __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        Track(__instance, s => s.Amount += (int)__instance.DynamicVars.MaxHp.BaseValue);
+    }
+}
+
+[HarmonyPatch(typeof(StoneHumidifier), nameof(StoneHumidifier.AfterRestSiteHeal))]
+public sealed class StoneHumidifierStats : SimpleCounterStats<StoneHumidifier>
+{
+    public override string Format => "Gained {0} [green]Max HP[/green].";
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(StoneHumidifier __instance, Player player)
+    {
+        if (player != __instance.Owner) return;
+        Track(__instance, s => s.Amount += (int)__instance.DynamicVars.MaxHp.BaseValue);
     }
 }
