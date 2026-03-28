@@ -801,14 +801,14 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
 
     public static void Prefix(BookOfFiveRings __instance)
     {
-        _prevCardsAdded = (int)(__instance.DynamicVars["CardsAddedSinceLastTrigger"]?.BaseValue ?? 0);
+        // CardsAdded is a [SavedProperty], not a DynamicVar
+        _prevCardsAdded = __instance.CardsAdded;
     }
 
     public static void Postfix(BookOfFiveRings __instance)
     {
-        // Trigger happened when counter wrapped to 0
-        var current = (int)(__instance.DynamicVars["CardsAddedSinceLastTrigger"]?.BaseValue ?? 0);
-        if (current < _prevCardsAdded)
-            Track(__instance, s => s.Amount += __instance.DynamicVars["Heal"].IntValue);
+        // Trigger happened when CardsAdded incremented and modulo wrapped to 0
+        if (__instance.CardsAdded > _prevCardsAdded && __instance.CardsAdded % __instance.DynamicVars.Cards.IntValue == 0)
+            Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
 }
