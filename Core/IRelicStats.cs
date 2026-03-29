@@ -12,8 +12,11 @@ public static class RelicIdHelper
 }
 
 public interface IRelicStats
+#if DEBUG
+    : ITestableRelic
+#endif
 {
-    string RelicId { get; }
+    new string RelicId { get; }
     string GetDescription(int totalTurns, int totalCombats);
     JsonObject Save();
     void Load(JsonObject data);

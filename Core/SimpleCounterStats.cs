@@ -3,6 +3,9 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Models;
+#if DEBUG
+using RelicStats.Core.Testing;
+#endif
 
 namespace RelicStats.Core;
 
@@ -70,8 +73,24 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
         FrozenCombatCount = null;
     }
 
+#if DEBUG
+    public abstract void RegisterTest(TestRunner runner);
+#endif
+
     public static bool Track(TRelic instance, Action<SimpleCounterStats<TRelic>> update)
     {
+#if DEBUG
+        var relicId = RelicIdHelper.Slugify(typeof(TRelic).Name);
+        if (TestManager.IsRunning)
+        {
+            if (instance.IsMelted) { MainFile.Logger.Info($"[Track] {relicId}: skipped (melted)"); return false; }
+            if (!LocalContext.IsMine(instance)) { MainFile.Logger.Info($"[Track] {relicId}: skipped (not mine, owner={instance.Owner?.NetId}, local={LocalContext.NetId})"); return false; }
+            if (RelicStatsRegistry.Get(relicId) is not SimpleCounterStats<TRelic> s) { MainFile.Logger.Info($"[Track] {relicId}: skipped (not in registry)"); return false; }
+            update(s);
+            MainFile.Logger.Info($"[Track] {relicId}: tracked, Amount={s.Amount}");
+            return true;
+        }
+#endif
         if (instance.IsMelted) return false;
         if (!LocalContext.IsMine(instance)) return false;
         if (RelicStatsRegistry.Get(RelicIdHelper.Slugify(typeof(TRelic).Name)) is not SimpleCounterStats<TRelic> stats) return false;

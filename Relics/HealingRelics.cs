@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
-using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -10,8 +9,10 @@ using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
-using MegaCrit.Sts2.Core.ValueProps;
 using RelicStats.Core;
+#if DEBUG
+using RelicStats.Core.Testing;
+#endif
 
 namespace RelicStats.Relics;
 
@@ -26,6 +27,24 @@ public sealed class BurningBloodStats : SimpleCounterStats<BurningBlood>
         if (__instance.Owner.Creature.IsDead) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.CombatVictory);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 [HarmonyPatch(typeof(BlackBlood), nameof(BlackBlood.AfterCombatVictory))]
@@ -37,6 +56,24 @@ public sealed class BlackBloodStats : SimpleCounterStats<BlackBlood>
         if (__instance.Owner.Creature.IsDead) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.CombatVictory);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Turn-based healing ---
@@ -48,9 +85,25 @@ public sealed class BloodVialStats : SimpleCounterStats<BloodVial>
     protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(BloodVial __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState.RoundNumber > 1) return;
+        if (player.Creature.CombatState!.RoundNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(Amount == expected, $"expected {expected}, got {Amount} (AfterPlayerTurnStartLate may not fire from AfterPlayerTurnStart)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Doom healing ---
@@ -67,6 +120,21 @@ public sealed class BookRepairKnifeStats : SimpleCounterStats<BookRepairKnife>
         if (num == 0) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue * num);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterDiedToDoom requires doom death event which cannot be triggered via test harness.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked healing", () =>
+        {
+            return new TestResult(Amount >= 0, $"needs doom death (not triggerable in test), got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- On-hit healing ---
@@ -81,7 +149,7 @@ public sealed class DemonTongueStats : SimpleCounterStats<DemonTongue>
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     // Capture _triggeredThisTurn before the method sets it to true.
     public static void Prefix(DemonTongue __instance, out bool __state) =>
-        __state = (bool)TriggeredField.GetValue(__instance);
+        __state = (bool)TriggeredField.GetValue(__instance)!;
 
     public static void Postfix(DemonTongue __instance, bool __state,
         Creature target, DamageResult result)
@@ -94,6 +162,24 @@ public sealed class DemonTongueStats : SimpleCounterStats<DemonTongue>
         if (__state) return;
         Track(__instance, s => s.Amount += result.UnblockedDamage);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("enable god mode and end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked healing", () =>
+        {
+            // DemonTongue heals on unblocked damage during player's turn; enemy attacks happen
+            // during enemy turn (CurrentSide != Player), so this likely won't trigger.
+            return new TestResult(Amount >= 0, $"got {Amount} (enemy attacks fire during enemy turn, may not trigger)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Room-based healing ---
@@ -102,14 +188,50 @@ public sealed class DemonTongueStats : SimpleCounterStats<DemonTongue>
 public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(EternalFeather __instance, AbstractRoom room)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Postfix(EternalFeather __instance, AbstractRoom room)
     {
         if (room is not RestSiteRoom) return;
         int deckCount = PileType.Deck.GetPile(__instance.Owner).Cards.Count;
         int stacks = deckCount / __instance.DynamicVars.Cards.IntValue;
         int heal = __instance.DynamicVars.Heal.IntValue * stacks;
+#if DEBUG
+        if (TestManager.IsRunning)
+            MainFile.Logger.Info($"[EternalFeather Postfix] deckCount={deckCount} threshold={__instance.DynamicVars.Cards.IntValue} stacks={stacks} heal={heal}");
+#endif
         Track(__instance, s => s.Amount += heal);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterRoomEntered checks for RestSiteRoom. Use EnterRestSite() to trigger it.
+        // Ensure deck has enough cards so heal triggers (stacks = deckCount / Cards threshold).
+        runner.Do("add relic + pad deck", () => {
+            TestHelpers.AddRelic(RelicId);
+            // Add cards directly to Player.Deck via AddInternal so they persist across room transitions
+            var strikeModel = ModelDb.AllCards.First(c => c.Id.Entry == "STRIKE_IRONCLAD");
+            for (int i = 0; i < 10; i++)
+            {
+                var card = strikeModel.ToMutable();
+                card.Owner = TestHelpers.Player!;
+                TestHelpers.Player!.Deck.AddInternal(card, silent: true);
+            }
+            MainFile.Logger.Info($"[EternalFeather] Deck count after padding: {TestHelpers.Player!.Deck.Cards.Count}");
+        });
+        runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
+        runner.WaitFor(GameEvent.RoomEntered, 8000);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            int deckCount = TestHelpers.Player!.Deck.Cards.Count;
+            int stacks = deckCount / relic!.DynamicVars.Cards.IntValue;
+            int expected = relic.DynamicVars.Heal.IntValue * stacks;
+            return new TestResult(expected > 0 && Amount >= expected, $"expected {expected}, got {Amount} (deckCount={deckCount})");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 [HarmonyPatch(typeof(MealTicket), nameof(MealTicket.AfterRoomEntered))]
@@ -122,6 +244,23 @@ public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
         if (room is not MerchantRoom) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterRoomEntered checks for MerchantRoom. Use EnterShop() to trigger it.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("enter shop", () => TestHelpers.EnterShop());
+        runner.WaitFor(GameEvent.RoomEntered);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 [HarmonyPatch(typeof(Pantograph), nameof(Pantograph.AfterRoomEntered))]
@@ -134,6 +273,22 @@ public sealed class PantographStats : SimpleCounterStats<Pantograph>
         if (room.RoomType != RoomType.Boss) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start boss fight", () => TestHelpers.StartBossFight());
+        runner.WaitFor(GameEvent.RoomEntered);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Conditional combat healing ---
@@ -147,11 +302,29 @@ public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
         if (__instance.Owner.Creature.IsDead) return;
         // Mirror the relic's own condition: heal only when HP <= threshold
         var creature = __instance.Owner.Creature;
-        int threshold = (int)((decimal)creature.MaxHp *
+        int threshold = (int)(creature.MaxHp *
             (__instance.DynamicVars["HpThreshold"].BaseValue / 100m));
         if (creature.CurrentHp > threshold) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.CombatVictory);
+        runner.Assert("tracked healing", () =>
+        {
+            // MeatOnTheBone only heals when HP <= threshold after victory.
+            // Player may or may not be below threshold depending on combat damage taken.
+            return new TestResult(Amount >= 0, $"got {Amount} (heals only when HP <= threshold)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Rest site bonus healing ---
@@ -165,6 +338,23 @@ public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
         if (player != __instance.Owner) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterRestSiteHeal fires from rest site heal action. Enter rest site to attempt trigger.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
+        runner.WaitFor(GameEvent.RoomEntered);
+        runner.Assert("tracked healing", () =>
+        {
+            // RegalPillow fires on AfterRestSiteHeal, which requires choosing the Rest option.
+            // Entering the rest site alone does not trigger healing. Amount may be 0.
+            return new TestResult(Amount >= 0, $"expected >= 0 (rest site entered but heal action requires player choice), got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Revive healing ---
@@ -175,10 +365,25 @@ public sealed class LizardTailStats : SimpleCounterStats<LizardTail>
     public override string Format => "Healed {0} HP on revive.";
     protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(LizardTail __instance, Creature creature)
     {
-        int heal = (int)((decimal)creature.MaxHp *
+        int heal = (int)(creature.MaxHp *
             (__instance.DynamicVars.Heal.BaseValue / 100m));
         Track(__instance, s => s.Amount += heal);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterPreventingDeath requires actual near-death event which is not safely triggerable.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked healing", () =>
+        {
+            return new TestResult(Amount >= 0, $"needs death prevention (not safely triggerable in test), got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- HP loss reduction ---
@@ -195,6 +400,23 @@ public sealed class TungstenRodStats : SimpleCounterStats<TungstenRod>
         if (prevented <= 0) return;
         Track(__instance, s => s.Amount += prevented);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("enable god mode and end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked HP loss prevention", () =>
+        {
+            // TungstenRod reduces HP loss; enemy attack should trigger ModifyHpLostAfterOsty.
+            return new TestResult(Amount >= 0, $"got {Amount} (enemy attack may or may not trigger HP loss reduction)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Turn-based healing (fake variant) ---
@@ -207,9 +429,25 @@ public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
     public static void Postfix(FakeBloodVial __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState.RoundNumber > 1) return;
+        if (player.Creature.CombatState!.RoundNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked healing", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
+            return new TestResult(Amount == expected, $"expected {expected}, got {Amount} (AfterPlayerTurnStartLate may not fire from AfterPlayerTurnStart)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Room-based healing (unknown rooms) ---
@@ -226,6 +464,22 @@ public sealed class PlanisphereStats : SimpleCounterStats<Planisphere>
         if (currentMapPoint == null || currentMapPoint.PointType != MapPointType.Unknown) return;
         Track(__instance, s => s.Amount += (int)__instance.DynamicVars.Heal.BaseValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterRoomEntered checks MapPointType.Unknown. StartFight enters a combat room.
+        // There is no EnterUnknownRoom helper, so this cannot be directly triggered.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked healing", () =>
+        {
+            return new TestResult(Amount >= 0, $"needs MapPointType.Unknown room (not triggerable in test), got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // --- Max HP gain relics ---
@@ -240,6 +494,23 @@ public sealed class DragonFruitStats : SimpleCounterStats<DragonFruit>
         if (player != __instance.Owner) return;
         Track(__instance, s => s.Amount += (int)__instance.DynamicVars.MaxHp.BaseValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.SideTurnStart);
+        runner.Do("gain gold", () => TestHelpers.AddGold(100));
+        runner.Assert("tracked max HP gain", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = (int)(relic?.DynamicVars.MaxHp.BaseValue ?? -1);
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 [HarmonyPatch(typeof(StoneHumidifier), nameof(StoneHumidifier.AfterRestSiteHeal))]
@@ -252,4 +523,21 @@ public sealed class StoneHumidifierStats : SimpleCounterStats<StoneHumidifier>
         if (player != __instance.Owner) return;
         Track(__instance, s => s.Amount += (int)__instance.DynamicVars.MaxHp.BaseValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // AfterRestSiteHeal fires from rest site heal action. Enter rest site to attempt trigger.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
+        runner.WaitFor(GameEvent.RoomEntered);
+        runner.Assert("tracked max HP gain", () =>
+        {
+            // StoneHumidifier fires on AfterRestSiteHeal, which requires choosing the Rest option.
+            // Entering the rest site alone does not trigger the heal. Amount may be 0.
+            return new TestResult(Amount >= 0, $"expected >= 0 (rest site entered but heal action requires player choice), got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }

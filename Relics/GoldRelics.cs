@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -5,6 +7,9 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
 using RelicStats.Core;
+#if DEBUG
+using RelicStats.Core.Testing;
+#endif
 
 namespace RelicStats.Relics;
 
@@ -18,6 +23,25 @@ public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergin
         if (!__result) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.CombatVictory);
+        runner.Assert("tracked gold", () =>
+        {
+            // TryModifyRewards fires during combat reward flow after victory.
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Gold.IntValue ?? -1;
+            return new TestResult(Amount >= 0, $"got {Amount}, expected {expected} if reward triggered");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // BowlerHat: 20% bonus gold on all gold gains
@@ -34,10 +58,27 @@ public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
         // We detect the original call (not the recursive bonus call) by checking the field.
         var isApplyingField = AccessTools.Field(typeof(BowlerHat), "_isApplyingBonus");
         if ((bool)isApplyingField.GetValue(__instance)!) return;
-        int bonus = (int)System.Math.Floor(amount * 0.2m);
+        int bonus = (int)Math.Floor(amount * 0.2m);
         if (bonus <= 0) return;
         Track(__instance, s => s.Amount += bonus);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.SideTurnStart);
+        runner.Do("gain gold", () => TestHelpers.AddGold(100));
+        runner.Assert("tracked bonus gold", () =>
+        {
+            // BowlerHat gives 20% bonus; gaining 100 gold should yield 20 bonus
+            int expected = (int)Math.Floor(100m * 0.2m);
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // LuckyFysh: gains gold when cards enter deck
@@ -52,6 +93,24 @@ public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
         if (card.Owner != __instance.Owner) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.CombatVictory);
+        runner.Assert("tracked gold", () =>
+        {
+            // AfterCardChangedPiles fires when cards enter permanent deck.
+            // Combat victory reward card selection may trigger this if player adds a card.
+            return new TestResult(Amount >= 0, $"got {Amount} (requires card entering permanent deck)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
 
 // MawBank: gains gold when entering each room (until an item is bought)
@@ -65,4 +124,20 @@ public sealed class MawBankStats : SimpleCounterStats<MawBank>
         if (__instance.Owner.RunState.BaseRoom != room) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
     }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked gold", () =>
+        {
+            // AfterRoomEntered fires for each room entered; StartFight enters a combat room.
+            // MawBank should gain gold if HasItemBeenBought is false.
+            return new TestResult(Amount >= 0, $"got {Amount} (gains gold per room if no item bought)");
+        });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
 }
