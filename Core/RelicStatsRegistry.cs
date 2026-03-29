@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace RelicStats.Core;
 
@@ -57,7 +58,7 @@ public static class RelicStatsRegistry
         {
             var desc = stats.GetDescription(TurnCount, CombatCount);
             // Strip BBCode for log readability
-            var plain = System.Text.RegularExpressions.Regex.Replace(desc, @"\[/?[^\]]+\]", "");
+            var plain = Regex.Replace(desc, @"\[/?[^\]]+\]", "");
             MainFile.Logger.Info($"  [{id}] {plain}");
         }
         MainFile.Logger.Info($"=== End Dump ({_stats.Count} relics) ===");

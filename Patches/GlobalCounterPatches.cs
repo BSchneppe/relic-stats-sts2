@@ -1,7 +1,8 @@
 using HarmonyLib;
-using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Unlocks;
 using RelicStats.Core;
 
 namespace RelicStats.Patches;
@@ -37,7 +38,7 @@ public static class WaxMeltPatch
     }
 }
 
-[HarmonyPatch(typeof(Player), nameof(Player.CreateForNewRun), new[] { typeof(CharacterModel), typeof(MegaCrit.Sts2.Core.Unlocks.UnlockState), typeof(ulong) })]
+[HarmonyPatch(typeof(Player), nameof(Player.CreateForNewRun), new[] { typeof(CharacterModel), typeof(UnlockState), typeof(ulong) })]
 public static class NewRunResetPatch
 {
     public static void Postfix()
