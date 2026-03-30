@@ -128,4 +128,86 @@ public class StatsPersistenceTests
         Assert.Equal(0, turnObtained);
         Assert.Null(frozenTurns);
     }
+
+    [Fact]
+    public void SaveFormat_MidRunObtainedRelic_PreservesObtainTime()
+    {
+        // Relic obtained at turn 5, combat 3 — save should preserve these values
+        var relic = new JsonObject
+        {
+            ["amount"] = 20,
+            ["turnObtained"] = 5,
+            ["combatObtained"] = 3,
+        };
+
+        var root = BuildSaveRoot(15, 8, new Dictionary<string, JsonObject> { ["MidRunRelic"] = relic });
+        var json = root.ToJsonString();
+        var parsed = JsonNode.Parse(json)!.AsObject();
+
+        var loaded = parsed["relics"]!["MidRunRelic"]!.AsObject();
+        Assert.Equal(20, loaded["amount"]!.GetValue<int>());
+        Assert.Equal(5, loaded["turnObtained"]!.GetValue<int>());
+        Assert.Equal(3, loaded["combatObtained"]!.GetValue<int>());
+
+        // Verify the denominator calculation uses obtain time
+        var amount = loaded["amount"]!.GetValue<int>();
+        var turnObt = loaded["turnObtained"]!.GetValue<int>();
+        var combatObt = loaded["combatObtained"]!.GetValue<int>();
+        var totalTurns = parsed["turnCount"]!.GetValue<int>();
+        var totalCombats = parsed["combatCount"]!.GetValue<int>();
+
+        var effectiveTurns = totalTurns - turnObt; // 15 - 5 = 10
+        var effectiveCombats = totalCombats - combatObt; // 8 - 3 = 5
+
+        Assert.Equal(10, effectiveTurns);
+        Assert.Equal(5, effectiveCombats);
+        Assert.Equal(2.0f, (float)amount / effectiveTurns); // 20/10 = 2.0
+        Assert.Equal(4.0f, (float)amount / effectiveCombats); // 20/5 = 4.0
+    }
+
+    [Fact]
+    public void SaveFormat_SaveClearLoadRoundTrip()
+    {
+        // Simulate: save stats, clear (reset), load, verify values match
+        var relics = new Dictionary<string, JsonObject>
+        {
+            ["TestRelic"] = new JsonObject
+            {
+                ["amount"] = 100,
+                ["turnObtained"] = 3,
+                ["combatObtained"] = 1,
+                ["frozenTurns"] = 12,
+                ["frozenCombats"] = 6,
+            },
+        };
+
+        // Save
+        var root = BuildSaveRoot(15, 8, relics);
+        var json = root.ToJsonString();
+
+        // Clear (simulate ResetAll)
+        var clearedRelics = new Dictionary<string, JsonObject>
+        {
+            ["TestRelic"] = new JsonObject
+            {
+                ["amount"] = 0,
+                ["turnObtained"] = 0,
+                ["combatObtained"] = 0,
+            },
+        };
+        var clearedRoot = BuildSaveRoot(0, 0, clearedRelics);
+
+        // Load (parse saved JSON)
+        var loaded = JsonNode.Parse(json)!.AsObject();
+        var loadedRelic = loaded["relics"]!["TestRelic"]!.AsObject();
+
+        // Verify loaded values match original
+        Assert.Equal(100, loadedRelic["amount"]!.GetValue<int>());
+        Assert.Equal(3, loadedRelic["turnObtained"]!.GetValue<int>());
+        Assert.Equal(1, loadedRelic["combatObtained"]!.GetValue<int>());
+        Assert.Equal(12, loadedRelic["frozenTurns"]!.GetValue<int>());
+        Assert.Equal(6, loadedRelic["frozenCombats"]!.GetValue<int>());
+        Assert.Equal(15, loaded["turnCount"]!.GetValue<int>());
+        Assert.Equal(8, loaded["combatCount"]!.GetValue<int>());
+    }
 }

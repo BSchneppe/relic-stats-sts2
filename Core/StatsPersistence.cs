@@ -66,6 +66,51 @@ public static class StatsPersistence
         return relics;
     }
 
+    public static string? GetSavedDescription(string relicId)
+    {
+        try
+        {
+            // Try singleplayer first, then multiplayer
+            return GetSavedDescriptionFromFile(SingleplayerPath, relicId)
+                ?? GetSavedDescriptionFromFile(MultiplayerPath, relicId);
+        }
+        catch (Exception e)
+        {
+            MainFile.Logger.Info($"Failed to load saved description: {e.Message}");
+            return null;
+        }
+    }
+
+    private static string? GetSavedDescriptionFromFile(string path, string relicId)
+    {
+        if (!FileAccess.FileExists(path)) return null;
+        var json = FileAccess.Open(path, FileAccess.ModeFlags.Read)?.GetAsText();
+        if (string.IsNullOrEmpty(json)) return null;
+
+        var root = JsonNode.Parse(json)?.AsObject();
+        if (root == null) return null;
+
+        var relicData = root["relics"]?[relicId]?.AsObject();
+        if (relicData == null) return null;
+
+        // Load saved data into the registry's stats object temporarily to use its formatting
+        var stats = RelicStatsRegistry.Get(relicId);
+        if (stats == null) return null;
+
+        var previousState = stats.Save();
+        try
+        {
+            stats.Load(relicData);
+            var totalTurns = root["turnCount"]?.GetValue<int>() ?? 0;
+            var totalCombats = root["combatCount"]?.GetValue<int>() ?? 0;
+            return stats.GetDescription(totalTurns, totalCombats);
+        }
+        finally
+        {
+            stats.Load(previousState);
+        }
+    }
+
     private static void DeserializeRelics(JsonObject? relics)
     {
         if (relics == null) return;
