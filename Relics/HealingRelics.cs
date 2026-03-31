@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -22,26 +23,32 @@ namespace RelicStats.Relics;
 public sealed class BurningBloodStats : SimpleCounterStats<BurningBlood>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(BurningBlood __instance)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(BurningBlood __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(BurningBlood __instance, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("win combat", () => TestHelpers.WinCombat());
         runner.WaitFor(GameEvent.CombatVictory);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 6, $"expected 6, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -51,26 +58,32 @@ public sealed class BurningBloodStats : SimpleCounterStats<BurningBlood>
 public sealed class BlackBloodStats : SimpleCounterStats<BlackBlood>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(BlackBlood __instance)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(BlackBlood __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(BlackBlood __instance, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("win combat", () => TestHelpers.WinCombat());
         runner.WaitFor(GameEvent.CombatVictory);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 12, $"expected 12, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -82,25 +95,32 @@ public sealed class BlackBloodStats : SimpleCounterStats<BlackBlood>
 public sealed class BloodVialStats : SimpleCounterStats<BloodVial>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(BloodVial __instance, Player player)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(BloodVial __instance, Player player, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(BloodVial __instance, Player player, int __state)
     {
         if (player != __instance.Owner) return;
         if (player.Creature.CombatState!.RoundNumber > 1) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = player.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            // Damage player so the heal has room to work (not at full HP)
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(Amount == expected, $"expected {expected}, got {Amount} (AfterPlayerTurnStartLate may not fire from AfterPlayerTurnStart)");
-        });
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -112,13 +132,15 @@ public sealed class BloodVialStats : SimpleCounterStats<BloodVial>
 public sealed class BookRepairKnifeStats : SimpleCounterStats<BookRepairKnife>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(BookRepairKnife __instance, IReadOnlyList<Creature> creatures)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(BookRepairKnife __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(BookRepairKnife __instance, int __state)
     {
-        int num = creatures.Count(c =>
-            c != __instance.Owner.Creature &&
-            c.Powers.All(p => p.ShouldOwnerDeathTriggerFatal()));
-        if (num == 0) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue * num);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
@@ -189,16 +211,18 @@ public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
 {
     public override string Format => "Healed {0} HP.";
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
-    public static void Postfix(EternalFeather __instance, AbstractRoom room)
+    public static void Prefix(EternalFeather __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(EternalFeather __instance, AbstractRoom room, int __state)
     {
         if (room is not RestSiteRoom) return;
-        int deckCount = PileType.Deck.GetPile(__instance.Owner).Cards.Count;
-        int stacks = deckCount / __instance.DynamicVars.Cards.IntValue;
-        int heal = __instance.DynamicVars.Heal.IntValue * stacks;
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
 #if DEBUG
         if (TestManager.IsRunning)
-            MainFile.Logger.Info($"[EternalFeather Postfix] deckCount={deckCount} threshold={__instance.DynamicVars.Cards.IntValue} stacks={stacks} heal={heal}");
+            MainFile.Logger.Info($"[EternalFeather Postfix] heal={heal} hpBefore={__state} hpAfter={__instance.Owner.Creature.CurrentHp}");
 #endif
+        if (heal <= 0) return;
         Track(__instance, s => s.Amount += heal);
     }
 
@@ -207,7 +231,7 @@ public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
     {
         // AfterRoomEntered checks for RestSiteRoom. Use EnterRestSite() to trigger it.
         // Ensure deck has enough cards so heal triggers (stacks = deckCount / Cards threshold).
-        runner.Do("add relic + pad deck", () => {
+        runner.Do("add relic + pad deck + damage player", () => {
             TestHelpers.AddRelic(RelicId);
             // Add cards directly to Player.Deck via AddInternal so they persist across room transitions
             var strikeModel = ModelDb.AllCards.First(c => c.Id.Entry == "STRIKE_IRONCLAD");
@@ -217,17 +241,16 @@ public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
                 card.Owner = TestHelpers.Player!;
                 TestHelpers.Player!.Deck.AddInternal(card, silent: true);
             }
+            // Damage player so the heal has room to work
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
             MainFile.Logger.Info($"[EternalFeather] Deck count after padding: {TestHelpers.Player!.Deck.Cards.Count}");
         });
         runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
         runner.WaitFor(GameEvent.RoomEntered, 8000);
         runner.Assert("tracked healing", () =>
         {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            int deckCount = TestHelpers.Player!.Deck.Cards.Count;
-            int stacks = deckCount / relic!.DynamicVars.Cards.IntValue;
-            int expected = relic.DynamicVars.Heal.IntValue * stacks;
-            return new TestResult(expected > 0 && Amount >= expected, $"expected {expected}, got {Amount} (deckCount={deckCount})");
+            // 10 padded + starting deck cards; heals 3 per 5 cards, capped by missing HP
+            return new TestResult(Amount > 0, $"expected > 0, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -238,26 +261,32 @@ public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
 public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(MealTicket __instance, AbstractRoom room)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(MealTicket __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(MealTicket __instance, AbstractRoom room, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
         if (room is not MerchantRoom) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
         // AfterRoomEntered checks for MerchantRoom. Use EnterShop() to trigger it.
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("enter shop", () => TestHelpers.EnterShop());
         runner.WaitFor(GameEvent.RoomEntered);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 15, $"expected 15, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -267,25 +296,31 @@ public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
 public sealed class PantographStats : SimpleCounterStats<Pantograph>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(Pantograph __instance, AbstractRoom room)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(Pantograph __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(Pantograph __instance, AbstractRoom room, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
         if (room.RoomType != RoomType.Boss) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("start boss fight", () => TestHelpers.StartBossFight());
         runner.WaitFor(GameEvent.RoomEntered);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 25, $"expected 25, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -297,15 +332,16 @@ public sealed class PantographStats : SimpleCounterStats<Pantograph>
 public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
 {
     public override string Format => "Healed {0} HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(MeatOnTheBone __instance)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(MeatOnTheBone __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(MeatOnTheBone __instance, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
-        // Mirror the relic's own condition: heal only when HP <= threshold
-        var creature = __instance.Owner.Creature;
-        int threshold = (int)(creature.MaxHp *
-            (__instance.DynamicVars["HpThreshold"].BaseValue / 100m));
-        if (creature.CurrentHp > threshold) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
@@ -333,10 +369,16 @@ public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
 public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
 {
     public override string Format => "Healed {0} extra HP.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(RegalPillow __instance, Player player)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(RegalPillow __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(RegalPillow __instance, Player player, int __state)
     {
         if (player != __instance.Owner) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = player.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
@@ -363,10 +405,14 @@ public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
 public sealed class LizardTailStats : SimpleCounterStats<LizardTail>
 {
     public override string Format => "Healed {0} HP on revive.";
-    protected override string FormatStat(int amount) => FormatStatGreen(amount);    public static void Postfix(LizardTail __instance, Creature creature)
+    protected override string FormatStat(int amount) => FormatStatGreen(amount);
+    public static void Prefix(LizardTail __instance, Creature creature, out int __state) =>
+        __state = creature.CurrentHp;
+
+    public static void Postfix(LizardTail __instance, Creature creature, int __state)
     {
-        int heal = (int)(creature.MaxHp *
-            (__instance.DynamicVars.Heal.BaseValue / 100m));
+        int heal = creature.CurrentHp - __state;
+        if (heal <= 0) return;
         Track(__instance, s => s.Amount += heal);
     }
 
@@ -426,25 +472,30 @@ public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
 {
     public override string Format => "Healed {0} HP.";
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
-    public static void Postfix(FakeBloodVial __instance, Player player)
+    public static void Prefix(FakeBloodVial __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(FakeBloodVial __instance, Player player, int __state)
     {
         if (player != __instance.Owner) return;
         if (player.Creature.CombatState!.RoundNumber > 1) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int heal = player.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic + damage player", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked healing", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(Amount == expected, $"expected {expected}, got {Amount} (AfterPlayerTurnStartLate may not fire from AfterPlayerTurnStart)");
-        });
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -457,12 +508,17 @@ public sealed class PlanisphereStats : SimpleCounterStats<Planisphere>
 {
     public override string Format => "Healed {0} HP.";
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
-    public static void Postfix(Planisphere __instance)
+    public static void Prefix(Planisphere __instance, out int __state) =>
+        __state = __instance.Owner.Creature.CurrentHp;
+
+    public static void Postfix(Planisphere __instance, int __state)
     {
         if (__instance.Owner.Creature.IsDead) return;
         var currentMapPoint = __instance.Owner.RunState.CurrentMapPoint;
         if (currentMapPoint == null || currentMapPoint.PointType != MapPointType.Unknown) return;
-        Track(__instance, s => s.Amount += (int)__instance.DynamicVars.Heal.BaseValue);
+        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG

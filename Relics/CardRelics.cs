@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
@@ -39,11 +40,11 @@ public sealed class BagOfPreparationStats : SimpleCounterStats<BagOfPreparation>
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked extra draw", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+            new TestResult(Amount == 2, $"expected still 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -67,11 +68,11 @@ public sealed class BigMushroomStats : SimpleCounterStats<BigMushroom>
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked fewer cards drawn", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+            new TestResult(Amount == 2, $"expected still 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -95,11 +96,11 @@ public sealed class BoomingConchStats : SimpleCounterStats<BoomingConch>
         runner.Do("start elite fight", () => TestHelpers.StartFight("BYGONE_EFFIGY_ELITE"));
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked extra draw vs elite", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+            new TestResult(Amount == 2, $"expected still 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -122,12 +123,12 @@ public sealed class FiddleStats : SimpleCounterStats<Fiddle>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked cards", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+        runner.Assert("tracked cards turn 1", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked cards turn 2", () =>
+            new TestResult(Amount == 4, $"expected 4, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -150,18 +151,18 @@ public sealed class PaelsBloodStats : SimpleCounterStats<PaelsBlood>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked cards", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+        runner.Assert("tracked cards turn 1", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked cards turn 2", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
 
-// RingOfTheDrake: +2 cards drawn first N turns
+// RingOfTheDrake: +2 cards drawn first N turns (base: 3 turns)
 [HarmonyPatch(typeof(RingOfTheDrake), nameof(RingOfTheDrake.ModifyHandDraw))]
 public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 {
@@ -178,12 +179,12 @@ public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked cards", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+        runner.Assert("tracked cards turn 1", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked cards turn 2", () =>
+            new TestResult(Amount == 4, $"expected 4, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -207,11 +208,11 @@ public sealed class RingOfTheSnakeStats : SimpleCounterStats<RingOfTheSnake>
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked cards", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end turn", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+            new TestResult(Amount == 2, $"expected still 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -446,19 +447,20 @@ public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
 }
 
 // GamblingChip: discards and redraws cards turn 1
+// Two patches work together: the Prefix on AfterPlayerTurnStart sets a flag with the relic
+// instance, and the Prefix on CardCmd.DiscardAndDraw checks that flag to track the actual
+// number of cards swapped (not just that the effect triggered).
 [HarmonyPatch(typeof(GamblingChip), nameof(GamblingChip.AfterPlayerTurnStart))]
 public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
 {
     public override string Format => "Swapped {0} cards.";
-    // GamblingChip is async and the discard count is determined at runtime by player choice.
-    // We patch AfterPlayerTurnStart; the actual swap count is internal. We track that
-    // the effect triggered (once per combat, turn 1). Precise swap count would require
-    // deeper hooking into CardCmd.DiscardAndDraw which is beyond simple counter scope.
-    public static void Postfix(GamblingChip __instance, Player player)
+    internal static GamblingChip? ActiveInstance;
+
+    public static void Prefix(GamblingChip __instance, Player player)
     {
         if (player != __instance.Owner) return;
         if (__instance.Owner.Creature.CombatState!.RoundNumber > 1) return;
-        Track(__instance, s => s.Amount++);
+        ActiveInstance = __instance;
     }
 
 #if DEBUG
@@ -467,11 +469,32 @@ public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked swap", () =>
-            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Do("simulate swap of 3 cards", () =>
+        {
+            // GamblingChip's AfterPlayerTurnStart is async (needs player UI input).
+            // Simulate the tracking path: set the flag and invoke the DiscardAndDraw patch directly.
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId) as GamblingChip;
+            ActiveInstance = relic;
+            GamblingChipDiscardAndDrawPatch.Prefix(3);
+        });
+        runner.Assert("tracked 3 swapped cards", () =>
+            new TestResult(Amount == 3, $"expected 3, got {Amount}"));
+        runner.Cleanup(() => { ActiveInstance = null; TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
+}
+
+[HarmonyPatch(typeof(CardCmd), nameof(CardCmd.DiscardAndDraw))]
+public static class GamblingChipDiscardAndDrawPatch
+{
+    public static void Prefix(int cardsToDraw)
+    {
+        var instance = GamblingChipStats.ActiveInstance;
+        if (instance == null) return;
+        GamblingChipStats.ActiveInstance = null;
+        if (cardsToDraw <= 0) return;
+        SimpleCounterStats<GamblingChip>.Track(instance, s => s.Amount += cardsToDraw);
+    }
 }
 
 // Bookmark: reduces cost of a retained card at turn end
@@ -543,10 +566,8 @@ public sealed class PocketwatchStats : SimpleCounterStats<Pocketwatch>
         runner.Do("snapshot and end turn again", () => { snapshot = Amount; TestHelpers.EndTurn(); });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("tracked extra draw", () => {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
             var delta = Amount - snapshot;
-            return new TestResult(expected > 0 && delta == expected, $"expected delta {expected}, got {delta}");
+            return new TestResult(delta == 3, $"expected delta 3, got {delta}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
