@@ -35,6 +35,7 @@ public static class TestHelpers
     private static readonly Lazy<EnchantConsoleCmd> _enchantCmd = new(() => new EnchantConsoleCmd());
     private static readonly Lazy<UpgradeCardConsoleCmd> _upgradeCmd = new(() => new UpgradeCardConsoleCmd());
     private static readonly Lazy<StarsConsoleCmd> _starsCmd = new(() => new StarsConsoleCmd());
+    private static readonly Lazy<AncientConsoleCmd> _ancientCmd = new(() => new AncientConsoleCmd());
 
     public static Player? Player { get; set; }
 
@@ -532,6 +533,20 @@ public static class TestHelpers
     public static void AddCardToCombatPile(string cardId, string pile = "Hand")
     {
         _cardCmd.Value.Process(Player, new[] { cardId, pile });
+    }
+
+    // --- Events & Ancients ---
+
+    private static readonly Lazy<EventConsoleCmd> _eventCmd = new(() => new EventConsoleCmd());
+
+    public static void OpenAncient(string ancientId)
+    {
+        Callable.From(() => _ancientCmd.Value.Process(Player, new[] { ancientId })).CallDeferred();
+    }
+
+    public static void OpenEvent(string eventId)
+    {
+        Callable.From(() => _eventCmd.Value.Process(Player, new[] { eventId })).CallDeferred();
     }
 
     // --- Enemy block ---
