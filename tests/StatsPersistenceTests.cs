@@ -5,23 +5,26 @@ namespace RelicStats.Tests;
 
 /// <summary>
 /// Tests JSON serialization structure and round-trip correctness
-/// for the registry save format.
+/// for the simplified save format (amount + floorMelted).
 /// </summary>
 public class StatsPersistenceTests
 {
-    // Replicate the save format from StatsPersistence
-    private static JsonObject BuildSaveRoot(int turnCount, int combatCount, Dictionary<string, JsonObject> relics)
+    private static JsonObject BuildSaveRoot(Dictionary<string, JsonObject> relics,
+        Dictionary<string, int>? floorMelted = null)
     {
         var relicsNode = new JsonObject();
         foreach (var (id, data) in relics)
-        {
             relicsNode[id] = data;
-        }
+
+        var floorMeltedNode = new JsonObject();
+        if (floorMelted != null)
+            foreach (var (id, floor) in floorMelted)
+                floorMeltedNode[id] = floor;
+
         return new JsonObject
         {
-            ["turnCount"] = turnCount,
-            ["combatCount"] = combatCount,
             ["relics"] = relicsNode,
+            ["floorMelted"] = floorMeltedNode,
         };
     }
 
@@ -30,84 +33,77 @@ public class StatsPersistenceTests
     {
         var relics = new Dictionary<string, JsonObject>
         {
-            ["Abacus"] = new JsonObject { ["amount"] = 42, ["turnObtained"] = 0, ["combatObtained"] = 0 },
-            ["HappyFlower"] = new JsonObject { ["amount"] = 5, ["turnObtained"] = 3, ["combatObtained"] = 1 },
+            ["ANCHOR"] = new JsonObject { ["amount"] = 42 },
+            ["HAPPY_FLOWER"] = new JsonObject { ["amount"] = 5 },
         };
 
-        var root = BuildSaveRoot(20, 8, relics);
+        var root = BuildSaveRoot(relics);
         var json = root.ToJsonString();
         var parsed = JsonNode.Parse(json)!.AsObject();
 
-        Assert.Equal(20, parsed["turnCount"]!.GetValue<int>());
-        Assert.Equal(8, parsed["combatCount"]!.GetValue<int>());
-        Assert.Equal(42, parsed["relics"]!["Abacus"]!["amount"]!.GetValue<int>());
-        Assert.Equal(5, parsed["relics"]!["HappyFlower"]!["amount"]!.GetValue<int>());
-        Assert.Equal(3, parsed["relics"]!["HappyFlower"]!["turnObtained"]!.GetValue<int>());
+        Assert.Equal(42, parsed["relics"]!["ANCHOR"]!["amount"]!.GetValue<int>());
+        Assert.Equal(5, parsed["relics"]!["HAPPY_FLOWER"]!["amount"]!.GetValue<int>());
     }
 
     [Fact]
     public void SaveFormat_EmptyRelics()
     {
-        var root = BuildSaveRoot(0, 0, new Dictionary<string, JsonObject>());
+        var root = BuildSaveRoot(new Dictionary<string, JsonObject>());
         var json = root.ToJsonString();
         var parsed = JsonNode.Parse(json)!.AsObject();
 
-        Assert.Equal(0, parsed["turnCount"]!.GetValue<int>());
-        Assert.Equal(0, parsed["combatCount"]!.GetValue<int>());
         Assert.Empty(parsed["relics"]!.AsObject());
     }
 
     [Fact]
-    public void SaveFormat_FrozenCounts_PreservedInRoundTrip()
+    public void SaveFormat_FloorMelted_PreservedInRoundTrip()
     {
-        var relic = new JsonObject
+        var relics = new Dictionary<string, JsonObject>
         {
-            ["amount"] = 30,
-            ["turnObtained"] = 0,
-            ["combatObtained"] = 0,
-            ["frozenTurns"] = 10,
-            ["frozenCombats"] = 5,
+            ["WAX_RELIC"] = new JsonObject { ["amount"] = 30 },
         };
+        var floorMelted = new Dictionary<string, int> { ["WAX_RELIC"] = 8 };
 
-        var root = BuildSaveRoot(20, 10, new Dictionary<string, JsonObject> { ["WaxRelic"] = relic });
+        var root = BuildSaveRoot(relics, floorMelted);
         var json = root.ToJsonString();
         var parsed = JsonNode.Parse(json)!.AsObject();
 
-        var loadedRelic = parsed["relics"]!["WaxRelic"]!.AsObject();
-        Assert.Equal(10, loadedRelic["frozenTurns"]!.GetValue<int>());
-        Assert.Equal(5, loadedRelic["frozenCombats"]!.GetValue<int>());
+        Assert.Equal(8, parsed["floorMelted"]!["WAX_RELIC"]!.GetValue<int>());
+        Assert.Equal(30, parsed["relics"]!["WAX_RELIC"]!["amount"]!.GetValue<int>());
     }
 
     [Fact]
-    public void SaveFormat_UnknownRelicId_IgnoredOnLoad()
+    public void SaveFormat_OldFormatFieldsIgnored()
     {
-        // Simulate loading a save with a relic ID that no longer exists
+        // Old saves had extra fields — they should be harmlessly ignored
         var root = new JsonObject
         {
-            ["turnCount"] = 5,
-            ["combatCount"] = 2,
+            ["turnCount"] = 20,
+            ["combatCount"] = 10,
             ["relics"] = new JsonObject
             {
-                ["NonExistentRelic"] = new JsonObject { ["amount"] = 99 },
+                ["ANCHOR"] = new JsonObject
+                {
+                    ["amount"] = 42,
+                    ["turnObtained"] = 5,
+                    ["combatObtained"] = 2,
+                    ["frozenTurns"] = 10,
+                    ["frozenCombats"] = 5,
+                },
             },
         };
 
-        // Should not throw — unknown IDs are simply skipped
         var json = root.ToJsonString();
         var parsed = JsonNode.Parse(json)!.AsObject();
-        var relics = parsed["relics"]!.AsObject();
 
-        // We can enumerate without error
-        foreach (var (id, _) in relics)
-        {
-            Assert.Equal("NonExistentRelic", id);
-        }
+        // amount is still readable
+        Assert.Equal(42, parsed["relics"]!["ANCHOR"]!["amount"]!.GetValue<int>());
+        // old fields exist but our new Load() ignores them
     }
 
     [Fact]
     public void SaveFormat_CorruptJson_ThrowsJsonException()
     {
-        // JsonNode.Parse throws on invalid JSON — StatsPersistence wraps this in try/catch
         var corrupted = "{ not valid json";
         Assert.ThrowsAny<JsonException>(() => JsonNode.Parse(corrupted));
     }
@@ -115,99 +111,29 @@ public class StatsPersistenceTests
     [Fact]
     public void SaveFormat_NullFields_DefaultToZero()
     {
-        var relic = new JsonObject
-        {
-            // Missing "amount", "turnObtained", etc.
-        };
-
+        var relic = new JsonObject();
         var amount = relic["amount"]?.GetValue<int>() ?? 0;
-        var turnObtained = relic["turnObtained"]?.GetValue<int>() ?? 0;
-        var frozenTurns = relic["frozenTurns"]?.GetValue<int>();
-
         Assert.Equal(0, amount);
-        Assert.Equal(0, turnObtained);
-        Assert.Null(frozenTurns);
-    }
-
-    [Fact]
-    public void SaveFormat_MidRunObtainedRelic_PreservesObtainTime()
-    {
-        // Relic obtained at turn 5, combat 3 — save should preserve these values
-        var relic = new JsonObject
-        {
-            ["amount"] = 20,
-            ["turnObtained"] = 5,
-            ["combatObtained"] = 3,
-        };
-
-        var root = BuildSaveRoot(15, 8, new Dictionary<string, JsonObject> { ["MidRunRelic"] = relic });
-        var json = root.ToJsonString();
-        var parsed = JsonNode.Parse(json)!.AsObject();
-
-        var loaded = parsed["relics"]!["MidRunRelic"]!.AsObject();
-        Assert.Equal(20, loaded["amount"]!.GetValue<int>());
-        Assert.Equal(5, loaded["turnObtained"]!.GetValue<int>());
-        Assert.Equal(3, loaded["combatObtained"]!.GetValue<int>());
-
-        // Verify the denominator calculation uses obtain time
-        var amount = loaded["amount"]!.GetValue<int>();
-        var turnObt = loaded["turnObtained"]!.GetValue<int>();
-        var combatObt = loaded["combatObtained"]!.GetValue<int>();
-        var totalTurns = parsed["turnCount"]!.GetValue<int>();
-        var totalCombats = parsed["combatCount"]!.GetValue<int>();
-
-        var effectiveTurns = totalTurns - turnObt; // 15 - 5 = 10
-        var effectiveCombats = totalCombats - combatObt; // 8 - 3 = 5
-
-        Assert.Equal(10, effectiveTurns);
-        Assert.Equal(5, effectiveCombats);
-        Assert.Equal(2.0f, (float)amount / effectiveTurns); // 20/10 = 2.0
-        Assert.Equal(4.0f, (float)amount / effectiveCombats); // 20/5 = 4.0
     }
 
     [Fact]
     public void SaveFormat_SaveClearLoadRoundTrip()
     {
-        // Simulate: save stats, clear (reset), load, verify values match
         var relics = new Dictionary<string, JsonObject>
         {
-            ["TestRelic"] = new JsonObject
-            {
-                ["amount"] = 100,
-                ["turnObtained"] = 3,
-                ["combatObtained"] = 1,
-                ["frozenTurns"] = 12,
-                ["frozenCombats"] = 6,
-            },
+            ["TEST_RELIC"] = new JsonObject { ["amount"] = 100 },
         };
+        var floorMelted = new Dictionary<string, int> { ["TEST_RELIC"] = 12 };
 
         // Save
-        var root = BuildSaveRoot(15, 8, relics);
+        var root = BuildSaveRoot(relics, floorMelted);
         var json = root.ToJsonString();
 
-        // Clear (simulate ResetAll)
-        var clearedRelics = new Dictionary<string, JsonObject>
-        {
-            ["TestRelic"] = new JsonObject
-            {
-                ["amount"] = 0,
-                ["turnObtained"] = 0,
-                ["combatObtained"] = 0,
-            },
-        };
-        var clearedRoot = BuildSaveRoot(0, 0, clearedRelics);
-
-        // Load (parse saved JSON)
+        // Load
         var loaded = JsonNode.Parse(json)!.AsObject();
-        var loadedRelic = loaded["relics"]!["TestRelic"]!.AsObject();
+        var loadedRelic = loaded["relics"]!["TEST_RELIC"]!.AsObject();
 
-        // Verify loaded values match original
         Assert.Equal(100, loadedRelic["amount"]!.GetValue<int>());
-        Assert.Equal(3, loadedRelic["turnObtained"]!.GetValue<int>());
-        Assert.Equal(1, loadedRelic["combatObtained"]!.GetValue<int>());
-        Assert.Equal(12, loadedRelic["frozenTurns"]!.GetValue<int>());
-        Assert.Equal(6, loadedRelic["frozenCombats"]!.GetValue<int>());
-        Assert.Equal(15, loaded["turnCount"]!.GetValue<int>());
-        Assert.Equal(8, loaded["combatCount"]!.GetValue<int>());
+        Assert.Equal(12, loaded["floorMelted"]!["TEST_RELIC"]!.GetValue<int>());
     }
 }

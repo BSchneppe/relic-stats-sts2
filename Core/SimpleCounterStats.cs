@@ -24,15 +24,9 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
     /// Override this to use green for healing numbers.
     /// </summary>
     protected string FormatStatGreen(int amount) => string.Format(Format, Fmt.Green(amount));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
-        var effectiveTurns = (FrozenTurnCount ?? totalTurns) - TurnWhenObtained;
-        var effectiveCombats = (FrozenCombatCount ?? totalCombats) - CombatWhenObtained;
         if (effectiveTurns < 1) effectiveTurns = 1;
         if (effectiveCombats < 1) effectiveCombats = 1;
 
@@ -44,33 +38,20 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
 
     public JsonObject Save()
     {
-        var obj = new JsonObject
+        return new JsonObject
         {
             ["amount"] = Amount,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
-        return obj;
     }
 
     public void Load(JsonObject data)
     {
         Amount = data["amount"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         Amount = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
 #if DEBUG

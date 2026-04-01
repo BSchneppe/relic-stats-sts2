@@ -613,12 +613,8 @@ public sealed class SneckoEyeStats : IRelicStats
     public int Cost2 { get; set; }
     public int Cost3 { get; set; }
     public int TotalDiscount { get; set; }
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         var totalCards = Cost0 + Cost1 + Cost2 + Cost3;
         var avgDiscount = totalCards > 0
@@ -640,11 +636,7 @@ public sealed class SneckoEyeStats : IRelicStats
             ["cost0"] = Cost0, ["cost1"] = Cost1,
             ["cost2"] = Cost2, ["cost3"] = Cost3,
             ["totalDiscount"] = TotalDiscount,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -656,10 +648,6 @@ public sealed class SneckoEyeStats : IRelicStats
         Cost2 = data["cost2"]?.GetValue<int>() ?? 0;
         Cost3 = data["cost3"]?.GetValue<int>() ?? 0;
         TotalDiscount = data["totalDiscount"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
@@ -667,10 +655,6 @@ public sealed class SneckoEyeStats : IRelicStats
         CardsDrawn = 0;
         Cost0 = Cost1 = Cost2 = Cost3 = 0;
         TotalDiscount = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     public static SneckoEyeStats? GetFor(SneckoEye instance)

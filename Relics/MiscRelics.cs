@@ -459,15 +459,11 @@ public sealed class MummifiedHandStats : SimpleCounterStats<MummifiedHand>
 public sealed class PaelsEyeStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(PaelsEye));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int ExtraTurns { get; set; }
     public int CardsExhausted { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Took {Fmt.Blue(ExtraTurns)} extra turns.\n" +
                $"{Fmt.Gold("Exhausted")} {Fmt.Blue(CardsExhausted)} cards.";
@@ -479,11 +475,7 @@ public sealed class PaelsEyeStats : IRelicStats
         {
             ["extraTurns"] = ExtraTurns,
             ["cardsExhausted"] = CardsExhausted,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -491,20 +483,12 @@ public sealed class PaelsEyeStats : IRelicStats
     {
         ExtraTurns = data["extraTurns"]?.GetValue<int>() ?? 0;
         CardsExhausted = data["cardsExhausted"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         ExtraTurns = 0;
         CardsExhausted = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(PaelsEye instance, out PaelsEyeStats stats)
@@ -596,15 +580,11 @@ public sealed class PaelsWingStats : SimpleCounterStats<PaelsWing>
 public sealed class PenNibStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(PenNib));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int Triggers { get; set; }
     public int AttacksPlayed { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Doubled {Fmt.Gold("Damage")} {Fmt.Blue(Triggers)} times.\n" +
                $"Attacks played: {Fmt.Blue(AttacksPlayed)}";
@@ -616,11 +596,7 @@ public sealed class PenNibStats : IRelicStats
         {
             ["triggers"] = Triggers,
             ["attacksPlayed"] = AttacksPlayed,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -628,20 +604,12 @@ public sealed class PenNibStats : IRelicStats
     {
         Triggers = data["triggers"]?.GetValue<int>() ?? 0;
         AttacksPlayed = data["attacksPlayed"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         Triggers = 0;
         AttacksPlayed = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(PenNib instance, out PenNibStats stats)
@@ -693,15 +661,11 @@ public sealed class PenNibStats : IRelicStats
 public sealed class PhylacteryUnboundStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(PhylacteryUnbound));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int CombatStartSummons { get; set; }
     public int TurnSummons { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         var total = CombatStartSummons + TurnSummons;
         return $"Summoned {Fmt.Blue(total)} minions.\n" +
@@ -715,11 +679,7 @@ public sealed class PhylacteryUnboundStats : IRelicStats
         {
             ["combatStartSummons"] = CombatStartSummons,
             ["turnSummons"] = TurnSummons,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -727,20 +687,12 @@ public sealed class PhylacteryUnboundStats : IRelicStats
     {
         CombatStartSummons = data["combatStartSummons"]?.GetValue<int>() ?? 0;
         TurnSummons = data["turnSummons"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         CombatStartSummons = 0;
         TurnSummons = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(PhylacteryUnbound instance, out PhylacteryUnboundStats stats)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using MegaCrit.Sts2.Core.DevConsole;
@@ -37,20 +38,49 @@ public class RelicStatsConsoleCmd : AbstractConsoleCmd
         }
 #endif
 
-        RelicStatsRegistry.DumpAllDescriptions();
+        DumpAllDescriptions(issuingPlayer);
 
         var lines = new StringBuilder();
-        lines.AppendLine($"Turn {RelicStatsRegistry.TurnCount}, Combat {RelicStatsRegistry.CombatCount}");
-        lines.AppendLine($"---");
+        lines.AppendLine("---");
 
         foreach (var (id, stats) in RelicStatsRegistry.All)
         {
-            var desc = stats.GetDescription(RelicStatsRegistry.TurnCount, RelicStatsRegistry.CombatCount);
+            int effectiveTurns = 1, effectiveCombats = 1;
+            if (issuingPlayer != null)
+            {
+                var floorMelted = RelicStatsRegistry.GetFloorMelted(id);
+                var relic = issuingPlayer.Relics.FirstOrDefault(r => r.Id.Entry == id);
+                if (relic != null)
+                    (effectiveTurns, effectiveCombats) = MapHistoryHelper.GetEffective(
+                        issuingPlayer, relic.FloorAddedToDeck, floorMelted);
+            }
+            var desc = stats.GetDescription(effectiveTurns, effectiveCombats);
             var plain = Regex.Replace(desc, @"\[/?[^\]]+\]", "");
             lines.AppendLine($"{id}: {plain}");
         }
 
         return new CmdResult(true, lines.ToString());
+    }
+
+    private static void DumpAllDescriptions(Player? player)
+    {
+        MainFile.Logger.Info($"=== Relic Stats Dump ===");
+        foreach (var (id, stats) in RelicStatsRegistry.All)
+        {
+            int effectiveTurns = 1, effectiveCombats = 1;
+            if (player != null)
+            {
+                var floorMelted = RelicStatsRegistry.GetFloorMelted(id);
+                var relic = player.Relics.FirstOrDefault(r => r.Id.Entry == id);
+                if (relic != null)
+                    (effectiveTurns, effectiveCombats) = MapHistoryHelper.GetEffective(
+                        player, relic.FloorAddedToDeck, floorMelted);
+            }
+            var desc = stats.GetDescription(effectiveTurns, effectiveCombats);
+            var plain = Regex.Replace(desc, @"\[/?[^\]]+\]", "");
+            MainFile.Logger.Info($"  [{id}] {plain}");
+        }
+        MainFile.Logger.Info($"=== End Dump ({RelicStatsRegistry.All.Count} relics) ===");
     }
 
 #if DEBUG

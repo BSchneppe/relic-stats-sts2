@@ -17,15 +17,16 @@ public static class StatsPersistence
         {
             var root = new JsonObject
             {
-                ["turnCount"] = RelicStatsRegistry.TurnCount,
-                ["combatCount"] = RelicStatsRegistry.CombatCount,
                 ["relics"] = SerializeRelics(),
+                ["floorMelted"] = SerializeFloorMelted(),
             };
 
             DirAccess.MakeDirRecursiveAbsolute(SaveDir);
             var path = isMultiplayer ? MultiplayerPath : SingleplayerPath;
             var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            FileAccess.Open(path, FileAccess.ModeFlags.Write)?.StoreString(json);
+            var file = FileAccess.Open(path, FileAccess.ModeFlags.Write);
+            file?.StoreString(json);
+            file?.Close();
         }
         catch (Exception e)
         {
@@ -46,9 +47,8 @@ public static class StatsPersistence
             var root = JsonNode.Parse(json)?.AsObject();
             if (root == null) return;
 
-            RelicStatsRegistry.TurnCount = root["turnCount"]?.GetValue<int>() ?? 0;
-            RelicStatsRegistry.CombatCount = root["combatCount"]?.GetValue<int>() ?? 0;
             DeserializeRelics(root["relics"]?.AsObject());
+            DeserializeFloorMelted(root["floorMelted"]?.AsObject());
         }
         catch (Exception e)
         {
@@ -66,11 +66,20 @@ public static class StatsPersistence
         return relics;
     }
 
+    private static JsonObject SerializeFloorMelted()
+    {
+        var obj = new JsonObject();
+        foreach (var (id, floor) in RelicStatsRegistry.AllFloorMelted)
+        {
+            obj[id] = floor;
+        }
+        return obj;
+    }
+
     public static string? GetSavedDescription(string relicId)
     {
         try
         {
-            // Try singleplayer first, then multiplayer
             return GetSavedDescriptionFromFile(SingleplayerPath, relicId)
                 ?? GetSavedDescriptionFromFile(MultiplayerPath, relicId);
         }
@@ -93,7 +102,6 @@ public static class StatsPersistence
         var relicData = root["relics"]?[relicId]?.AsObject();
         if (relicData == null) return null;
 
-        // Load saved data into the registry's stats object temporarily to use its formatting
         var stats = RelicStatsRegistry.Get(relicId);
         if (stats == null) return null;
 
@@ -101,9 +109,8 @@ public static class StatsPersistence
         try
         {
             stats.Load(relicData);
-            var totalTurns = root["turnCount"]?.GetValue<int>() ?? 0;
-            var totalCombats = root["combatCount"]?.GetValue<int>() ?? 0;
-            return stats.GetDescription(totalTurns, totalCombats);
+            // History display: no map history available, show raw stat with 1/1 denominators.
+            return stats.GetDescription(1, 1);
         }
         finally
         {
@@ -121,6 +128,17 @@ public static class StatsPersistence
             {
                 stats.Load(data);
             }
+        }
+    }
+
+    private static void DeserializeFloorMelted(JsonObject? floorMelted)
+    {
+        if (floorMelted == null) return;
+        foreach (var (id, node) in floorMelted)
+        {
+            var floor = node?.GetValue<int>();
+            if (floor.HasValue)
+                RelicStatsRegistry.SetFloorMelted(id, floor.Value);
         }
     }
 }

@@ -12,12 +12,7 @@ public abstract class ValidationTest : IRelicStats
 {
     public abstract string RelicId { get; }
 
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
-
-    public string GetDescription(int totalTurns, int totalCombats) => "Validation-only.";
+    public string GetDescription(int effectiveTurns, int effectiveCombats) => "Validation-only.";
     public JsonObject Save() => new();
     public void Load(JsonObject data) { }
     public void Reset() { }

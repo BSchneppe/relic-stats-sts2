@@ -17,12 +17,8 @@ public interface IRelicStats
 #endif
 {
     new string RelicId { get; }
-    string GetDescription(int totalTurns, int totalCombats);
+    string GetDescription(int effectiveTurns, int effectiveCombats);
     JsonObject Save();
     void Load(JsonObject data);
     void Reset();
-    int TurnWhenObtained { get; set; }
-    int CombatWhenObtained { get; set; }
-    int? FrozenTurnCount { get; set; }
-    int? FrozenCombatCount { get; set; }
 }

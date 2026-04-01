@@ -13,7 +13,6 @@ public static class HoverTipsPatch
     public static void Postfix(RelicModel __instance, ref IEnumerable<IHoverTip> __result)
     {
         if (__instance.IsCanonical) return;
-        if (__instance.IsMelted) return;
         if (__instance.Owner == null) return;
 
         var stats = RelicStatsRegistry.Get(__instance.Id.Entry);
@@ -25,7 +24,10 @@ public static class HoverTipsPatch
         string statsText;
         if (isOwned)
         {
-            statsText = stats.GetDescription(RelicStatsRegistry.TurnCount, RelicStatsRegistry.CombatCount);
+            var floorMelted = RelicStatsRegistry.GetFloorMelted(__instance.Id.Entry);
+            var (turns, combats) = MapHistoryHelper.GetEffective(
+                __instance.Owner, __instance.FloorAddedToDeck, floorMelted);
+            statsText = stats.GetDescription(turns, combats);
         }
         else
         {

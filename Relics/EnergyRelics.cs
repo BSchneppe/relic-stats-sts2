@@ -317,15 +317,11 @@ public sealed class IceCreamStats : SimpleCounterStats<IceCream>
 public sealed class PhilosophersStoneStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(PhilosophersStone));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int StrengthGiven { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Gave enemies {Fmt.Blue(StrengthGiven)} {Fmt.Strength}.";
@@ -337,11 +333,7 @@ public sealed class PhilosophersStoneStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["strength"] = StrengthGiven,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -349,20 +341,12 @@ public sealed class PhilosophersStoneStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         StrengthGiven = data["strength"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         StrengthGiven = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(PhilosophersStone instance, out PhilosophersStoneStats stats)
@@ -428,15 +412,11 @@ public sealed class PhilosophersStoneStats : IRelicStats
 public sealed class BlessedAntlerStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(BlessedAntler));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int DazedAdded { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Added {Fmt.Blue(DazedAdded)} Dazed cards.";
@@ -448,11 +428,7 @@ public sealed class BlessedAntlerStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["dazed"] = DazedAdded,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -460,20 +436,12 @@ public sealed class BlessedAntlerStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         DazedAdded = data["dazed"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         DazedAdded = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(BlessedAntler instance, out BlessedAntlerStats stats)
@@ -530,15 +498,11 @@ public sealed class BlessedAntlerStats : IRelicStats
 public sealed class BloodSoakedRoseStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(BloodSoakedRose));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int EnthrallAdded { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Added {Fmt.Blue(EnthrallAdded)} Enthralled curses.";
@@ -550,11 +514,7 @@ public sealed class BloodSoakedRoseStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["enthrall"] = EnthrallAdded,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -562,20 +522,12 @@ public sealed class BloodSoakedRoseStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         EnthrallAdded = data["enthrall"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         EnthrallAdded = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(BloodSoakedRose instance, out BloodSoakedRoseStats stats)
@@ -628,15 +580,11 @@ public sealed class BloodSoakedRoseStats : IRelicStats
 public sealed class BreadStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(Bread));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGained { get; set; }
     public int EnergyLost { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGained)} [gold]Energy[/gold]. " +
                $"Lost {Fmt.Blue(EnergyLost)} [gold]Energy[/gold] on turn 1.";
@@ -648,11 +596,7 @@ public sealed class BreadStats : IRelicStats
         {
             ["gained"] = EnergyGained,
             ["lost"] = EnergyLost,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -660,20 +604,12 @@ public sealed class BreadStats : IRelicStats
     {
         EnergyGained = data["gained"]?.GetValue<int>() ?? 0;
         EnergyLost = data["lost"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGained = 0;
         EnergyLost = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(Bread instance, out BreadStats stats)
@@ -946,15 +882,11 @@ public sealed class PaelsFleshStats : SimpleCounterStats<PaelsFlesh>
 public sealed class EctoplasmStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(Ectoplasm));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int GoldBlocked { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Blocked {Fmt.Blue(GoldBlocked)} {Fmt.GoldKw}.";
@@ -966,11 +898,7 @@ public sealed class EctoplasmStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["goldBlocked"] = GoldBlocked,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -978,20 +906,12 @@ public sealed class EctoplasmStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         GoldBlocked = data["goldBlocked"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         GoldBlocked = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(Ectoplasm instance, out EctoplasmStats stats)
@@ -1045,15 +965,11 @@ public sealed class EctoplasmStats : IRelicStats
 public sealed class SealOfGoldStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(SealOfGold));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int GoldSpent { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Spent {Fmt.Blue(GoldSpent)} {Fmt.GoldKw}.";
@@ -1065,11 +981,7 @@ public sealed class SealOfGoldStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["goldSpent"] = GoldSpent,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -1077,20 +989,12 @@ public sealed class SealOfGoldStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         GoldSpent = data["goldSpent"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         GoldSpent = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(SealOfGold instance, out SealOfGoldStats stats)
@@ -1141,15 +1045,11 @@ public sealed class SealOfGoldStats : IRelicStats
 public sealed class SozuStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(Sozu));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int PotionsBlocked { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Blocked {Fmt.Blue(PotionsBlocked)} potions.";
@@ -1161,11 +1061,7 @@ public sealed class SozuStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["potionsBlocked"] = PotionsBlocked,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -1173,20 +1069,12 @@ public sealed class SozuStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         PotionsBlocked = data["potionsBlocked"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         PotionsBlocked = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(Sozu instance, out SozuStats stats)
@@ -1240,15 +1128,11 @@ public sealed class SozuStats : IRelicStats
 public sealed class SpikedGauntletsStats : IRelicStats
 {
     public string RelicId => RelicIdHelper.Slugify(nameof(SpikedGauntlets));
-    public int TurnWhenObtained { get; set; }
-    public int CombatWhenObtained { get; set; }
-    public int? FrozenTurnCount { get; set; }
-    public int? FrozenCombatCount { get; set; }
 
     public int EnergyGenerated { get; set; }
     public int PowerCostIncrease { get; set; }
 
-    public string GetDescription(int totalTurns, int totalCombats)
+    public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
                $"Increased power costs {Fmt.Blue(PowerCostIncrease)} times.";
@@ -1260,11 +1144,7 @@ public sealed class SpikedGauntletsStats : IRelicStats
         {
             ["energy"] = EnergyGenerated,
             ["powerCost"] = PowerCostIncrease,
-            ["turnObtained"] = TurnWhenObtained,
-            ["combatObtained"] = CombatWhenObtained,
         };
-        if (FrozenTurnCount.HasValue) obj["frozenTurns"] = FrozenTurnCount.Value;
-        if (FrozenCombatCount.HasValue) obj["frozenCombats"] = FrozenCombatCount.Value;
         return obj;
     }
 
@@ -1272,20 +1152,12 @@ public sealed class SpikedGauntletsStats : IRelicStats
     {
         EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
         PowerCostIncrease = data["powerCost"]?.GetValue<int>() ?? 0;
-        TurnWhenObtained = data["turnObtained"]?.GetValue<int>() ?? 0;
-        CombatWhenObtained = data["combatObtained"]?.GetValue<int>() ?? 0;
-        FrozenTurnCount = data["frozenTurns"]?.GetValue<int>();
-        FrozenCombatCount = data["frozenCombats"]?.GetValue<int>();
     }
 
     public void Reset()
     {
         EnergyGenerated = 0;
         PowerCostIncrease = 0;
-        TurnWhenObtained = RelicStatsRegistry.TurnCount;
-        CombatWhenObtained = RelicStatsRegistry.CombatCount;
-        FrozenTurnCount = null;
-        FrozenCombatCount = null;
     }
 
     private static bool TryGet(SpikedGauntlets instance, out SpikedGauntletsStats stats)
