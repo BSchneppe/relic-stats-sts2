@@ -3,6 +3,7 @@ using System.Linq;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Runs;
 using RelicStats.Core;
 
 namespace RelicStats.Patches;
@@ -18,23 +19,29 @@ public static class HoverTipsPatch
         var stats = RelicStatsRegistry.Get(__instance.Id.Entry);
         if (stats == null) return;
 
-        // Check if relic is in owner's inventory (active run) vs history display
-        var isOwned = __instance.Owner.Relics.Any(r => r.Id == __instance.Id);
+        // Distinguish active run vs history display:
+        // History players are created via Player.CreateForNewRun and have NullRunState.
+        var isActiveRun = __instance.Owner.RunState is not NullRunState;
+        var relicId = __instance.Id.Entry;
         var floorText = $"Floor obtained: {__instance.FloorAddedToDeck}";
         string statsText;
-        if (isOwned)
+        if (isActiveRun)
         {
-            var floorMelted = RelicStatsRegistry.GetFloorMelted(__instance.Id.Entry);
+            var floorMelted = RelicStatsRegistry.GetFloorMelted(relicId);
             var (turns, combats) = MapHistoryHelper.GetEffective(
                 __instance.Owner, __instance.FloorAddedToDeck, floorMelted);
             statsText = stats.GetDescription(turns, combats);
         }
         else
         {
-            // History relic — try to show saved stats
-            var saved = StatsPersistence.GetSavedDescription(__instance.Id.Entry);
-            if (saved == null) return;
-            statsText = saved;
+            // History relic — derive averages from RunHistory.MapPointHistory
+            var history = RunHistoryContext.Current;
+            if (history == null) return;
+
+            var savedDesc = StatsPersistence.GetRunHistoryDescription(
+                relicId, history.StartTime, history.MapPointHistory, __instance.FloorAddedToDeck);
+            if (savedDesc == null) return;
+            statsText = savedDesc;
         }
         var description = $"{floorText}\n{statsText}";
 

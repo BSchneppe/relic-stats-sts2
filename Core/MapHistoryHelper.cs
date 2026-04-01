@@ -16,11 +16,39 @@ public static class MapHistoryHelper
     /// </summary>
     public static (int turns, int combats) GetEffective(Player player, int startFloor, int? endFloor = null)
     {
+        var (turns, combats) = GetEffective(
+            player.RunState.MapPointHistory, startFloor, endFloor);
+
+        // Add in-progress combat turns when not frozen (endFloor == null)
+        if (!endFloor.HasValue)
+        {
+            var cm = CombatManager.Instance;
+            if (cm != null && cm.IsInProgress)
+            {
+                var state = cm.DebugOnlyGetState();
+                if (state != null)
+                {
+                    turns += state.RoundNumber;
+                    combats++; // count the current combat
+                }
+            }
+        }
+
+        return (turns, combats);
+    }
+
+    /// <summary>
+    /// Computes effective turns and combats from raw map point history data.
+    /// Used for both active runs (via Player overload) and run history display.
+    /// </summary>
+    public static (int turns, int combats) GetEffective(
+        IEnumerable<IEnumerable<MapPointHistoryEntry>> mapPointHistory, int startFloor, int? endFloor = null)
+    {
         int turns = 0;
         int combats = 0;
         int floor = 0;
 
-        foreach (var act in player.RunState.MapPointHistory)
+        foreach (var act in mapPointHistory)
         {
             foreach (var mapPoint in act)
             {
@@ -35,21 +63,6 @@ public static class MapHistoryHelper
                         turns += room.TurnsTaken;
                         combats++;
                     }
-                }
-            }
-        }
-
-        // Add in-progress combat turns when not frozen (endFloor == null)
-        if (!endFloor.HasValue)
-        {
-            var cm = CombatManager.Instance;
-            if (cm != null && cm.IsInProgress)
-            {
-                var state = cm.DebugOnlyGetState();
-                if (state != null)
-                {
-                    turns += state.RoundNumber;
-                    combats++; // count the current combat
                 }
             }
         }

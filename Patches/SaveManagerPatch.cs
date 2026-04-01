@@ -1,15 +1,22 @@
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Managers;
 using RelicStats.Core;
 
 namespace RelicStats.Patches;
 
-[HarmonyPatch(typeof(RunSaveManager), nameof(RunSaveManager.SaveRun))]
+/// <summary>
+/// RunSaveManager.SaveRun is async, so Harmony prefix may not fire reliably.
+/// Instead, patch RunManager.ToSave which is synchronous and called during every save.
+/// </summary>
+[HarmonyPatch(typeof(RunManager), nameof(RunManager.ToSave))]
 public static class SaveRunPatch
 {
     public static void Prefix()
     {
-        StatsPersistence.Save(isMultiplayer: false);
+        var isMultiplayer = RunManager.Instance?.NetService?.Type.IsMultiplayer() == true;
+        StatsPersistence.Save(isMultiplayer);
     }
 }
 
@@ -30,3 +37,4 @@ public static class LoadMultiplayerRunSavePatch
         StatsPersistence.Load(isMultiplayer: true);
     }
 }
+

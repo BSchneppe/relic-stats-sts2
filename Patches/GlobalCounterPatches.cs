@@ -2,6 +2,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Saves;
 using RelicStats.Core;
 
 namespace RelicStats.Patches;
@@ -25,7 +26,8 @@ public static class NewRunResetPatch
 {
     public static void Prefix()
     {
-        StatsPersistence.Save(isMultiplayer: RunManager.Instance?.NetService?.Type.IsMultiplayer() == true);
+        var isMultiplayer = RunManager.Instance?.NetService?.Type.IsMultiplayer() == true;
+        StatsPersistence.Save(isMultiplayer);
         RelicStatsRegistry.ResetAll();
     }
 }
@@ -33,8 +35,12 @@ public static class NewRunResetPatch
 [HarmonyPatch(typeof(RunHistoryUtilities), nameof(RunHistoryUtilities.CreateRunHistoryEntry))]
 public static class RunEndSavePatch
 {
-    public static void Prefix()
+    public static void Prefix(SerializableRun run)
     {
-        StatsPersistence.Save(isMultiplayer: RunManager.Instance?.NetService?.Type.IsMultiplayer() == true);
+        var isMultiplayer = RunManager.Instance?.NetService?.Type.IsMultiplayer() == true;
+        // Save active run stats
+        StatsPersistence.Save(isMultiplayer);
+        // Save per-run snapshot alongside the .run history file
+        StatsPersistence.SaveRunHistory(run.StartTime);
     }
 }
