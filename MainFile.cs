@@ -47,5 +47,12 @@ public partial class MainFile : Node
         }
 
         Logger.Info($"Patched {succeeded} targets ({failed} failed)");
+
+        // Register global finalizer on every patched method to swallow exceptions
+        var finalizerMethod = typeof(Patches.PatchSafety).GetMethod(nameof(Patches.PatchSafety.Finalizer));
+        foreach (var method in harmony.GetPatchedMethods())
+        {
+            harmony.Patch(method, finalizer: new HarmonyMethod(finalizerMethod));
+        }
     }
 }
