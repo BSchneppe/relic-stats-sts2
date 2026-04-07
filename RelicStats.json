@@ -3,9 +3,9 @@
   "name": "Relic Stats",
   "author": "BSchneppe",
   "description": "Tracks and displays how much value each relic has provided during your run. Inspired by ForgottenArbiter's Relic Stats for STS1.",
-  "version": "v0.4.0",
+  "version": "v0.5.0",
   "has_pck": false,
   "has_dll": true,
-  "dependencies": ["BaseLib"],
+  "dependencies": [],
   "affects_gameplay": false
 }
