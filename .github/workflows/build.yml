@@ -7,6 +7,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ref-assemblies:
+          - '0.99.*'
+          - '0.102.0-beta-5fd772f8'
+    name: Build (ref ${{ matrix.ref-assemblies }})
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -14,6 +20,6 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
       - name: Build
-        run: dotnet build -c Release --no-restore
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}

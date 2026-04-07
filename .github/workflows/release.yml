@@ -3,7 +3,34 @@ on:
   push:
     tags: ['v*']
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ref-assemblies: '0.99.*'
+            label: stable
+          - ref-assemblies: '0.102.0-beta-5fd772f8'
+            label: beta
+    name: Build (${{ matrix.label }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Restore dependencies
+        run: dotnet restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
+      - name: Build
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.label }}
+          path: .godot/mono/temp/bin/Release/RelicStats.dll
+
   release:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,17 +43,34 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Restore dependencies
-        run: dotnet restore
-      - name: Build
-        run: dotnet build -c Release --no-restore
-      - name: Package Release Artifacts
+      - name: Download stable build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-stable
+          path: artifacts/stable
+      - name: Download beta build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-beta
+          path: artifacts/beta
+      - name: Package stable
         run: |
-          mkdir -p release/RelicStats
-          find .godot/mono/temp/bin/Release/ -name "RelicStats.dll" -exec cp {} release/RelicStats/ \;
-          cp RelicStats.json release/RelicStats/
-          cd release
-          zip -r ../RelicStats-v${{ steps.version.outputs.version }}.zip RelicStats
+          mkdir -p release-stable/RelicStats
+          cp artifacts/stable/RelicStats.dll release-stable/RelicStats/
+          cp RelicStats.json release-stable/RelicStats/
+          cd release-stable
+          zip -r ../RelicStats-v${{ steps.version.outputs.version }}-stable.zip RelicStats
+      - name: Package beta
+        run: |
+          mkdir -p release-beta/RelicStats
+          cp artifacts/beta/RelicStats.dll release-beta/RelicStats/
+          cp RelicStats.json release-beta/RelicStats/
+          cd release-beta
+          zip -r ../RelicStats-v${{ steps.version.outputs.version }}-beta.zip RelicStats
+      - name: Restore dependencies
+        run: dotnet restore -p:RefAssembliesVersion=0.99.*
+      - name: Build for NuGet
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=0.99.*
       - name: Pack NuGet
         run: dotnet pack -c Release -o ./nupkg -p:Version=${{ steps.version.outputs.version }} --no-build
       - name: Push to nuget.org
@@ -34,7 +78,9 @@ jobs:
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: RelicStats-v${{ steps.version.outputs.version }}.zip
+          files: |
+            RelicStats-v${{ steps.version.outputs.version }}-stable.zip
+            RelicStats-v${{ steps.version.outputs.version }}-beta.zip
           generate_release_notes: true
           draft: false
           prerelease: false

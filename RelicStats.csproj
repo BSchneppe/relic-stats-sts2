@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>RelicStats</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RefAssembliesVersion Condition="'$(RefAssembliesVersion)' == ''">0.99.*</RefAssembliesVersion>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
 
     <!-- NuGet package metadata -->
@@ -29,7 +30,7 @@
 
   <ItemGroup>
     <!-- CI / no game install: use NuGet stubs -->
-    <PackageReference Include="BSchneppe.Sts2.ReferenceAssemblies" Version="0.99.*"
+    <PackageReference Include="BSchneppe.Sts2.ReferenceAssemblies" Version="$(RefAssembliesVersion)"
                       Condition="!Exists('$(STS2GameDir)/sts2.dll')"
                       PrivateAssets="All" />
   </ItemGroup>
@@ -51,8 +52,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Alchyr.Sts2.BaseLib" Version="0.1.9" PrivateAssets="All" />
-    <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*" />
   </ItemGroup>
 
   <ItemGroup>
