@@ -2,6 +2,10 @@ name: Release
 on:
   push:
     tags: ['v*']
+env:
+  # Stable ref-assemblies version. Keep in sync with the build matrix below
+  # (the env context is not available inside strategy.matrix).
+  STABLE_REF_ASSEMBLIES: '0.107.1'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -68,9 +72,9 @@ jobs:
           cd release-beta
           zip -r ../RelicStats-v${{ steps.version.outputs.version }}-beta.zip RelicStats
       - name: Restore dependencies
-        run: dotnet restore -p:RefAssembliesVersion=0.99.*
+        run: dotnet restore -p:RefAssembliesVersion=${{ env.STABLE_REF_ASSEMBLIES }}
       - name: Build for NuGet
-        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=0.99.*
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ env.STABLE_REF_ASSEMBLIES }}
       - name: Pack NuGet
         run: dotnet pack -c Release -o ./nupkg -p:Version=${{ steps.version.outputs.version }} --no-build
       - name: Push to nuget.org
