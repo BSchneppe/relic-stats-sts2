@@ -19,3 +19,4 @@ Thumbs.db
 
 # Firecrawl
 .firecrawl/
+build/

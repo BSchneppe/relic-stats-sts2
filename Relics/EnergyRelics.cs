@@ -34,7 +34,7 @@ public sealed class ArtOfWarStats : SimpleCounterStats<ArtOfWar>
     {
         _hadNoAttacks = false;
         if (player != __instance.Owner) return;
-        if (__instance.Owner.Creature.CombatState!.RoundNumber <= 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber <= 1) return;
         _hadNoAttacks = !(bool)AttacksField.GetValue(__instance)!;
     }
 
@@ -253,10 +253,10 @@ public sealed class PumpkinCandleStats : SimpleCounterStats<PumpkinCandle>
 public sealed class LanternStats : SimpleCounterStats<Lantern>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(Lantern __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(Lantern __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
 
@@ -466,10 +466,10 @@ public sealed class BlessedAntlerStats : IRelicStats
 
     [HarmonyPatch(typeof(BlessedAntler), nameof(BlessedAntler.BeforeHandDraw))]
     [HarmonyPostfix]
-    public static void BeforeHandDrawPostfix(BlessedAntler __instance, Player player, CombatState combatState)
+    public static void BeforeHandDrawPostfix(BlessedAntler __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
-        if (combatState.RoundNumber != 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.DazedAdded += __instance.DynamicVars.Cards.IntValue;
     }
@@ -634,10 +634,10 @@ public sealed class BreadStats : IRelicStats
 
     [HarmonyPatch(typeof(Bread), nameof(Bread.AfterSideTurnStart))]
     [HarmonyPostfix]
-    public static void AfterSideTurnStartPostfix(Bread __instance, CombatSide side, CombatState combatState)
+    public static void AfterSideTurnStartPostfix(Bread __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber != 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyLost += (int)__instance.DynamicVars["LoseEnergy"].BaseValue;
     }
@@ -668,10 +668,10 @@ public sealed class BreadStats : IRelicStats
 public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(Chandelier __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(Chandelier __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber != 3) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 3) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
 
@@ -704,10 +704,10 @@ public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
 public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(Candelabra __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(Candelabra __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber != 2) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 2) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
 
@@ -739,10 +739,10 @@ public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
 public sealed class VeryHotCocoaStats : SimpleCounterStats<VeryHotCocoa>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(VeryHotCocoa __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(VeryHotCocoa __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
 
@@ -846,10 +846,10 @@ public sealed class VenerableTeaSetStats : SimpleCounterStats<VenerableTeaSet>
 public sealed class PaelsFleshStats : SimpleCounterStats<PaelsFlesh>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(PaelsFlesh __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(PaelsFlesh __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber < 3) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber < 3) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
 
@@ -934,13 +934,13 @@ public sealed class EctoplasmStats : IRelicStats
         stats.EnergyGenerated += delta;
     }
 
-    [HarmonyPatch(typeof(Ectoplasm), nameof(Ectoplasm.ShouldGainGold))]
+    [HarmonyPatch(typeof(Ectoplasm), nameof(Ectoplasm.ModifyGoldGained))]
     [HarmonyPostfix]
-    public static void ShouldGainGoldPostfix(Ectoplasm __instance, decimal amount, Player player)
+    public static void ModifyGoldGainedPostfix(Ectoplasm __instance, decimal amount, decimal __result, Player player)
     {
         if (player != __instance.Owner) return;
         if (!TryGet(__instance, out var stats)) return;
-        stats.GoldBlocked += (int)amount;
+        stats.GoldBlocked += (int)(amount - __result);
     }
 
 #if DEBUG

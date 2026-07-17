@@ -14,7 +14,9 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 
 namespace RelicStats.Core.Testing;
 
@@ -145,10 +147,14 @@ public static class TestHelpers
             MainFile.Logger.Info("[ProtectEnemy] No enemies found!");
             return;
         }
+        var ctx = new ThrowingPlayerChoiceContext();
         foreach (var enemy in enemies)
         {
             enemy.SetMaxHpInternal(999999);
             enemy.SetCurrentHpInternal(999999);
+            // GodMode gives the player ~1e9 Strength, so raw HP isn't enough to survive an attack.
+            // BufferPower prevents HP loss outright (same mechanism GodMode uses to protect the player).
+            TaskHelper.RunSafely(PowerCmd.Apply<BufferPower>(ctx, enemy, 999999999m, enemy, null));
         }
         MainFile.Logger.Info($"[ProtectEnemy] Protected {enemies.Count} enemies");
     }
@@ -231,12 +237,12 @@ public static class TestHelpers
             if (!_pendingEndTurn || Player == null) return;
             var cm = CombatManager.Instance;
             if (cm == null || !cm.IsInProgress) return;
-            if (!cm.IsPlayPhase)
+            if (Player.PlayerCombatState?.Phase != PlayerTurnPhase.Play)
             {
-                MainFile.Logger.Info($"[TryEndTurn] retry {_endTurnRetries}: IsPlayPhase=false");
+                MainFile.Logger.Info($"[TryEndTurn] retry {_endTurnRetries}: Phase={Player.PlayerCombatState?.Phase}");
                 return;
             }
-            // Ensure it's actually the player's turn — IsPlayPhase can be true during side transitions
+            // Ensure it's actually the player's turn — the Play phase can briefly overlap side transitions
             var state = cm.DebugOnlyGetState();
             if (state == null || state.CurrentSide != CombatSide.Player)
             {
@@ -322,26 +328,64 @@ public static class TestHelpers
     public static void PlayCard(int handIndex = 0, int targetIndex = -1)
     {
         if (Player == null) return;
+        TryPlayCard(handIndex, targetIndex, 0);
+    }
+
+    // A card can only be played during the Play phase and on the player's turn. AfterPlayerTurnStart
+    // (which drives the test's PlayerTurnStart event) fires earlier, in the Start phase, so playing
+    // immediately would no-op and stall the whole play/end-turn chain. Retry until the phase is right
+    // and TryManualPlay actually plays the card.
+    private static void TryPlayCard(int handIndex, int targetIndex, int attempt)
+    {
+        if (Player == null) return;
         try
         {
-            var hand = PileType.Hand.GetPile(Player);
-            if (hand == null || hand.Cards.Count <= handIndex) return;
-            var card = hand.Cards[handIndex];
-            Creature? target = null;
-            if (targetIndex >= 0)
+            var cm = CombatManager.Instance;
+            bool ready = cm != null && cm.IsInProgress
+                && Player.PlayerCombatState?.Phase == PlayerTurnPhase.Play
+                && cm.DebugOnlyGetState()?.CurrentSide == CombatSide.Player;
+
+            if (ready)
             {
-                var enemies = Player.Creature.CombatState?.HittableEnemies;
-                if (enemies != null && enemies.Count > targetIndex)
-                    target = enemies[targetIndex];
+                var hand = PileType.Hand.GetPile(Player);
+                if (hand == null || hand.Cards.Count <= handIndex) return;
+                var card = hand.Cards[handIndex];
+                Creature? target = null;
+                if (targetIndex >= 0)
+                {
+                    var enemies = Player.Creature.CombatState?.HittableEnemies;
+                    if (enemies != null && enemies.Count > targetIndex)
+                        target = enemies[targetIndex];
+                }
+                var capturedCard = card;
+                var capturedTarget = target;
+                Callable.From(() => {
+                    var played = capturedCard.TryManualPlay(capturedTarget);
+                    MainFile.Logger.Info($"[PlayCard] {capturedCard.Id.Entry} idx={handIndex} target={capturedTarget?.Monster?.Id.Entry ?? "none"} played={played} attempt={attempt}");
+                    if (!played && attempt < 120)
+                        SchedulePlayRetry(handIndex, targetIndex, attempt + 1);
+                }).CallDeferred();
+                return;
             }
-            var capturedCard = card;
-            var capturedTarget = target;
-            Callable.From(() => {
-                var played = capturedCard.TryManualPlay(capturedTarget);
-                MainFile.Logger.Info($"[PlayCard] {capturedCard.Id.Entry} idx={handIndex} target={capturedTarget?.Monster?.Id.Entry ?? "none"} played={played}");
-            }).CallDeferred();
+
+            if (attempt < 120)
+            {
+                if (attempt == 0 || attempt % 20 == 0)
+                    MainFile.Logger.Info($"[PlayCard] retry {attempt}: Phase={Player.PlayerCombatState?.Phase}");
+                SchedulePlayRetry(handIndex, targetIndex, attempt + 1);
+            }
+            else
+            {
+                MainFile.Logger.Info($"[PlayCard] gave up idx={handIndex} after {attempt} attempts (Phase={Player.PlayerCombatState?.Phase})");
+            }
         }
         catch { /* combat may have ended */ }
+    }
+
+    private static void SchedulePlayRetry(int handIndex, int targetIndex, int attempt)
+    {
+        var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
+        timer.Timeout += () => TryPlayCard(handIndex, targetIndex, attempt);
     }
 
     // ── Event-driven card play queue ──
@@ -459,9 +503,33 @@ public static class TestHelpers
     public static void UsePotion()
     {
         if (Player == null) return;
-        var potion = Player.Potions.FirstOrDefault();
-        if (potion == null) return;
-        Callable.From(() => potion.EnqueueManualUse(Player.Creature)).CallDeferred();
+        TryUsePotion(0);
+    }
+
+    // Like PlayCard, a potion can only be used during the Play phase; retry until then.
+    private static void TryUsePotion(int attempt)
+    {
+        if (Player == null) return;
+        try
+        {
+            var cm = CombatManager.Instance;
+            bool ready = cm != null && cm.IsInProgress
+                && Player.PlayerCombatState?.Phase == PlayerTurnPhase.Play
+                && cm.DebugOnlyGetState()?.CurrentSide == CombatSide.Player;
+            if (ready)
+            {
+                var potion = Player.Potions.FirstOrDefault();
+                if (potion == null) return;
+                Callable.From(() => potion.EnqueueManualUse(Player.Creature)).CallDeferred();
+                return;
+            }
+            if (attempt < 120)
+            {
+                var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
+                timer.Timeout += () => TryUsePotion(attempt + 1);
+            }
+        }
+        catch { /* combat may have ended */ }
     }
 
     /// <summary>

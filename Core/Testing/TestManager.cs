@@ -240,7 +240,7 @@ public static class TestManager
     private static void WaitForCombatSettled(Action then, int attempts = 0)
     {
         var cm = CombatManager.Instance;
-        if (cm == null || !cm.IsInProgress || cm.IsPlayPhase || attempts >= 25)
+        if (cm == null || !cm.IsInProgress || TestHelpers.Player?.PlayerCombatState?.Phase == PlayerTurnPhase.Play || attempts >= 25)
         {
             then();
             return;

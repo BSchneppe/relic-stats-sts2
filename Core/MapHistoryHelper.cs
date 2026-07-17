@@ -12,7 +12,7 @@ public static class MapHistoryHelper
     /// Computes effective turns and combats from map history.
     /// Counts combat rooms (Monster, Elite, Boss) between startFloor (exclusive) and
     /// endFloor (inclusive). If endFloor is null, counts to current floor and adds
-    /// CombatState.RoundNumber for any in-progress combat.
+    /// the in-progress combat's player turn count (PlayerCombatState.TurnNumber).
     /// </summary>
     public static (int turns, int combats) GetEffective(Player player, int startFloor, int? endFloor = null)
     {
@@ -28,7 +28,9 @@ public static class MapHistoryHelper
                 var state = cm.DebugOnlyGetState();
                 if (state != null)
                 {
-                    turns += state.RoundNumber;
+                    // Match how the game records TurnsTaken (see MapPointRoomHistoryEntry):
+                    // player's turn count, falling back to combat RoundNumber.
+                    turns += player.PlayerCombatState?.TurnNumber ?? state.RoundNumber;
                     combats++; // count the current combat
                 }
             }
