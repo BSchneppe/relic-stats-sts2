@@ -10,6 +10,8 @@ jobs:
         include:
           - ref-assemblies: '0.107.1'
             label: stable
+          - ref-assemblies: '0.107.1'
+            label: beta
     name: Build (${{ matrix.label }})
     steps:
       - uses: actions/checkout@v4
