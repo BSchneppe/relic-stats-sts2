@@ -24,7 +24,7 @@ APP_ID="2868840"
 PUBLISHED_FILE_ID="${PUBLISHED_FILE_ID:-}" # leave empty; auto-created & saved on first run
 STEAM_USER="${STEAM_USER:-}"               # TODO: Steam builder account (required)
 VISIBILITY="${VISIBILITY:-2}"              # 0=public 1=friends 2=private 3=unlisted
-DOTNET="${DOTNET:-dotnet}"                 # override if dotnet isn't on PATH
+DOTNET="${DOTNET:-, dotnet}"                 # override if dotnet isn't on PATH
 PREVIEW="${PREVIEW:-workshop_preview.png}" # optional; used only if the file exists
 # ───────────────────────────────────────────────────────────────────────
 
@@ -56,9 +56,17 @@ CREATING=false
 echo ">> Building RelicStats (Release)..."
 "$DOTNET" build -c Release "$REPO/RelicStats.csproj"
 
-DLL="$REPO/bin/Release/net9.0/RelicStats.dll"
+# Godot.NET.Sdk emits to .godot/mono/temp/bin/<Config>/, not the default bin/ path.
+DLL=""
+for cand in \
+  "$REPO/.godot/mono/temp/bin/Release/RelicStats.dll" \
+  "$REPO/bin/Release/net9.0/RelicStats.dll"; do
+  [[ -f "$cand" ]] && { DLL="$cand"; break; }
+done
+[[ -n "$DLL" ]] || DLL="$(find "$REPO/.godot" "$REPO/bin" -name RelicStats.dll -path '*Release*' 2>/dev/null | head -n1)"
+[[ -n "$DLL" && -f "$DLL" ]] || err "built RelicStats.dll not found (looked in .godot/mono/temp/bin/Release and bin/Release/net9.0)."
+
 JSON="$REPO/RelicStats.json"
-[[ -f "$DLL" ]] || err "built DLL not found at $DLL"
 [[ -f "$JSON" ]] || err "RelicStats.json not found at $JSON"
 
 # Sanity: mod must not reference beta-only relic types unless intended.

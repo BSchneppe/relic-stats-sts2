@@ -9,9 +9,15 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 
 ## Installation
 
-1. Install [BaseLib](https://github.com/Alchyr/BaseLib-StS2) (required dependency)
-2. Download `RelicStats.dll` and `RelicStats.json` from [Releases](../../releases)
-3. Place both files in `Slay the Spire 2/mods/RelicStats/`
+Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are required.
+
+**Steam Workshop (recommended):** subscribe to the item, launch the game, and enable it in the in-game Mods menu.
+
+**Manual:**
+
+1. Download `RelicStats.dll` and `RelicStats.json` from [Releases](../../releases)
+2. Place both files in `Slay the Spire 2/mods/RelicStats/`
+3. Launch the game — stats begin tracking when you start a run
 
 ## Coverage
 
