@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>RelicStats</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
-    <RefAssembliesVersion Condition="'$(RefAssembliesVersion)' == ''">0.99.*</RefAssembliesVersion>
+    <RefAssembliesVersion Condition="'$(RefAssembliesVersion)' == ''">0.107.1</RefAssembliesVersion>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
 
     <!-- NuGet package metadata -->

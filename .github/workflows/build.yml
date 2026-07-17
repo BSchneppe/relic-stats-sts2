@@ -10,8 +10,7 @@ jobs:
     strategy:
       matrix:
         ref-assemblies:
-          - '0.99.*'
-          - '0.102.0-beta-5fd772f8'
+          - '0.107.1'
     name: Build (ref ${{ matrix.ref-assemblies }})
     steps:
       - uses: actions/checkout@v4
