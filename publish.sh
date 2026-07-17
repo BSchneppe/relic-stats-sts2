@@ -21,10 +21,10 @@ set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────
 APP_ID="2868840"                       
-PUBLISHED_FILE_ID="${PUBLISHED_FILE_ID:-}" # leave empty; auto-created & saved on first run
+PUBLISHED_FILE_ID="3766484698" # leave empty; auto-created & saved on first run
 STEAM_USER="${STEAM_USER:-}"               # TODO: Steam builder account (required)
 VISIBILITY="${VISIBILITY:-2}"              # 0=public 1=friends 2=private 3=unlisted
-DOTNET="${DOTNET:-, dotnet}"                 # override if dotnet isn't on PATH
+DOTNET="${DOTNET:-dotnet}"                 # override if dotnet isn't on PATH
 PREVIEW="${PREVIEW:-workshop_preview.png}" # optional; used only if the file exists
 # ───────────────────────────────────────────────────────────────────────
 
