@@ -8,9 +8,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - ref-assemblies: '0.99.*'
+          - ref-assemblies: '0.107.1'
             label: stable
-          - ref-assemblies: '0.102.0-beta-5fd772f8'
+          - ref-assemblies: '0.109.0-beta-c12f634d'
             label: beta
     name: Build (${{ matrix.label }})
     steps:
