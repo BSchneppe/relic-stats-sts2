@@ -15,7 +15,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 
 ## Coverage
 
-**183 of 290** relics tracked.
+**191 of 298** relics tracked.
 
 <details>
 <summary>Click to expand full relic coverage</summary>
@@ -111,6 +111,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Fencing Manual | :white_check_mark: | Gained X Forge |
 | Festive Popper | :white_check_mark: | Dealt X Damage |
 | Fiddle | :white_check_mark: | Drew X additional cards |
+| Fishing Rod | :white_check_mark: | Upgraded X cards |
 | Forgotten Soul | :white_check_mark: | Dealt X Damage |
 | Fragrant Mushroom | | |
 | Fresnel Lens | :white_check_mark: | Enchanted X cards |
@@ -132,6 +133,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Gremlin Horn | :white_check_mark: | Triggered X times (drew cards + gained Energy) |
 | Hand Drill | :white_check_mark: | Applied Vulnerable X times |
 | Happy Flower | :white_check_mark: | Generated X Energy |
+| Hefty Tablet | :white_check_mark: | Offered X rare cards |
 | Helical Dart | :white_check_mark: | Gained X Dexterity from Shivs |
 | History Course | :white_check_mark: | Auto-replayed X cards |
 | Horn Cleat | :white_check_mark: | Gained X Block |
@@ -144,6 +146,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Jewelry Box | | |
 | Joss Paper | :white_check_mark: | Drew X cards |
 | Juzu Bracelet | | |
+| Kaleidoscope | :white_check_mark: | Offered X cross-character card rewards |
 | Kifuda | | |
 | Kunai | :white_check_mark: | Gained X Dexterity |
 | Kusarigama | :white_check_mark: | Dealt X Damage |
@@ -180,6 +183,8 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Mummified Hand | :white_check_mark: | Made X cards free |
 | Music Box | :white_check_mark: | Copied X attacks as Ethereal |
 | Mystic Lighter | :white_check_mark: | Added X Damage to enchanted attacks |
+| Neows Bones | :white_check_mark: | Offered X relics, added X curses |
+| Neows Talisman | :white_check_mark: | Upgraded X starter cards |
 | Neows Torment | | |
 | New Leaf | | |
 | Ninja Scroll | :white_check_mark: | Created X Shivs |
@@ -212,6 +217,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Pendulum | :white_check_mark: | Drew X cards |
 | Permafrost | :white_check_mark: | Gained X Block |
 | Petrified Toad | :white_check_mark: | Generated X potions |
+| Phial Holster | :white_check_mark: | Gained X potion slots, granted X potions |
 | Philosophers Stone | :white_check_mark: | Complex tracking |
 | Phylactery Unbound | :white_check_mark: | Complex tracking |
 | Planisphere | :white_check_mark: | Healed X HP |
@@ -255,6 +261,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | Shovel | :white_check_mark: | Offered dig X times |
 | Shuriken | :white_check_mark: | Gained X Strength |
 | Signet Ring | | |
+| Silken Tress | :white_check_mark: | Enchanted X card rewards with Glam |
 | Silver Crucible | :white_check_mark: | Upgraded card rewards X times |
 | Sling Of Courage | :white_check_mark: | Gained X Strength |
 | Small Capsule | | |
@@ -309,6 +316,7 @@ Inspired by [ForgottenArbiter's Relic Stats for STS1](https://github.com/Forgott
 | White Beast Statue | | |
 | White Star | | |
 | Wing Charm | | |
+| Winged Boots | :white_check_mark: | Used X free travels |
 | Wongo Customer Appreciation Badge | | |
 | Wongos Mystery Ticket | :white_check_mark: | Completed X combats toward relic |
 | Yummy Cookie | | |

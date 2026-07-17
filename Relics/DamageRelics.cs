@@ -59,7 +59,7 @@ public sealed class FestivePopperStats : SimpleCounterStats<FestivePopper>
     public static void Postfix(FestivePopper __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState!.RoundNumber != 1) return;
+        if (player.PlayerCombatState!.TurnNumber != 1) return;
         Track(__instance, s => s.Amount +=
             __instance.DynamicVars.Damage.IntValue *
             __instance.Owner.Creature.CombatState!.HittableEnemies.Count);
@@ -208,7 +208,7 @@ public sealed class MrStrugglesStats : SimpleCounterStats<MrStruggles>
         if (player != __instance.Owner) return;
         var combatState = player.Creature.CombatState!;
         Track(__instance, s => s.Amount +=
-            combatState.RoundNumber * combatState.HittableEnemies.Count);
+            player.PlayerCombatState!.TurnNumber * combatState.HittableEnemies.Count);
     }
 
 #if DEBUG
@@ -219,7 +219,7 @@ public sealed class MrStrugglesStats : SimpleCounterStats<MrStruggles>
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked damage", () => {
             var combatState = TestHelpers.Player!.Creature.CombatState!;
-            var expected = combatState.RoundNumber * combatState.HittableEnemies.Count;
+            var expected = TestHelpers.Player!.PlayerCombatState!.TurnNumber * combatState.HittableEnemies.Count;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
@@ -227,7 +227,7 @@ public sealed class MrStrugglesStats : SimpleCounterStats<MrStruggles>
 #endif
 }
 
-[HarmonyPatch(typeof(ScreamingFlagon), nameof(ScreamingFlagon.BeforeTurnEnd))]
+[HarmonyPatch(typeof(ScreamingFlagon), nameof(ScreamingFlagon.BeforeSideTurnEnd))]
 public sealed class ScreamingFlagonStats : SimpleCounterStats<ScreamingFlagon>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold].";
@@ -261,7 +261,7 @@ public sealed class ScreamingFlagonStats : SimpleCounterStats<ScreamingFlagon>
 #endif
 }
 
-[HarmonyPatch(typeof(StoneCalendar), nameof(StoneCalendar.BeforeTurnEnd))]
+[HarmonyPatch(typeof(StoneCalendar), nameof(StoneCalendar.BeforeSideTurnEnd))]
 public sealed class StoneCalendarStats : SimpleCounterStats<StoneCalendar>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold].";
@@ -269,7 +269,7 @@ public sealed class StoneCalendarStats : SimpleCounterStats<StoneCalendar>
     {
         if (side != __instance.Owner.Creature.Side) return;
         var combatState = __instance.Owner.Creature.CombatState!;
-        if (combatState.RoundNumber != __instance.DynamicVars["DamageTurn"].IntValue) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != __instance.DynamicVars["DamageTurn"].IntValue) return;
         Track(__instance, s => s.Amount +=
             __instance.DynamicVars.Damage.IntValue *
             combatState.HittableEnemies.Count);
@@ -557,7 +557,7 @@ public sealed class LostWispStats : SimpleCounterStats<LostWisp>
 }
 
 // ParryingShield: deals damage to a random enemy at turn end if block >= threshold
-[HarmonyPatch(typeof(ParryingShield), nameof(ParryingShield.AfterTurnEnd))]
+[HarmonyPatch(typeof(ParryingShield), nameof(ParryingShield.AfterSideTurnEnd))]
 public sealed class ParryingShieldStats : SimpleCounterStats<ParryingShield>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold].";
@@ -588,7 +588,7 @@ public sealed class ParryingShieldStats : SimpleCounterStats<ParryingShield>
 }
 
 // TheBoot: boosts low damage hits to 5
-[HarmonyPatch(typeof(TheBoot), nameof(TheBoot.ModifyHpLostBeforeOsty))]
+[HarmonyPatch(typeof(TheBoot), nameof(TheBoot.ModifyHpLostAfterOstyLate))]
 public sealed class TheBootStats : SimpleCounterStats<TheBoot>
 {
     public override string Format => "Boosted damage to 5 {0} times.";

@@ -102,7 +102,7 @@ public sealed class BloodVialStats : SimpleCounterStats<BloodVial>
     public static void Postfix(BloodVial __instance, Player player, int __state)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState!.RoundNumber > 1) return;
+        if (player.PlayerCombatState!.TurnNumber > 1) return;
         int heal = player.Creature.CurrentHp - __state;
         if (heal <= 0) return;
         Track(__instance, s => s.Amount += heal);
@@ -292,19 +292,21 @@ public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
 #endif
 }
 
-[HarmonyPatch(typeof(Pantograph), nameof(Pantograph.AfterRoomEntered))]
+// Pantograph: heals at the start of Boss combats
+[HarmonyPatch(typeof(Pantograph), nameof(Pantograph.BeforeCombatStart))]
 public sealed class PantographStats : SimpleCounterStats<Pantograph>
 {
     public override string Format => "Healed {0} HP.";
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
-    public static void Prefix(Pantograph __instance, out int __state) =>
-        __state = __instance.Owner.Creature.CurrentHp;
 
-    public static void Postfix(Pantograph __instance, AbstractRoom room, int __state)
+    // The heal is awaited inside BeforeCombatStart, so a Postfix can't observe the HP change
+    // reliably. Mirror the relic's condition and compute the effective heal from missing HP.
+    public static void Prefix(Pantograph __instance)
     {
-        if (__instance.Owner.Creature.IsDead) return;
-        if (room.RoomType != RoomType.Boss) return;
-        int heal = __instance.Owner.Creature.CurrentHp - __state;
+        var creature = __instance.Owner.Creature;
+        if (creature.IsDead) return;
+        if (__instance.Owner.RunState.CurrentRoom?.RoomType != RoomType.Boss) return;
+        int heal = (int)Math.Min(__instance.DynamicVars.Heal.BaseValue, creature.MaxHp - creature.CurrentHp);
         if (heal <= 0) return;
         Track(__instance, s => s.Amount += heal);
     }
@@ -318,7 +320,8 @@ public sealed class PantographStats : SimpleCounterStats<Pantograph>
             TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
         });
         runner.Do("start boss fight", () => TestHelpers.StartBossFight());
-        runner.WaitFor(GameEvent.RoomEntered);
+        // BeforeCombatStart fires before the CombatStart event; wait for CombatStart.
+        runner.WaitFor(GameEvent.CombatStart);
         runner.Assert("tracked healing", () =>
             new TestResult(Amount == 25, $"expected 25, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
@@ -478,7 +481,7 @@ public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
     public static void Postfix(FakeBloodVial __instance, Player player, int __state)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState!.RoundNumber > 1) return;
+        if (player.PlayerCombatState!.TurnNumber > 1) return;
         int heal = player.Creature.CurrentHp - __state;
         if (heal <= 0) return;
         Track(__instance, s => s.Amount += heal);

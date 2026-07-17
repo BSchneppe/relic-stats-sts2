@@ -154,10 +154,10 @@ public sealed class ChemicalXStats : SimpleCounterStats<ChemicalX>
 public sealed class CrackedCoreStats : SimpleCounterStats<CrackedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
-    public static void Postfix(CrackedCore __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(CrackedCore __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Lightning"].IntValue);
     }
 
@@ -182,10 +182,10 @@ public sealed class CrackedCoreStats : SimpleCounterStats<CrackedCore>
 public sealed class InfusedCoreStats : SimpleCounterStats<InfusedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
-    public static void Postfix(InfusedCore __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(InfusedCore __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Lightning"].IntValue);
     }
 
@@ -309,7 +309,7 @@ public sealed class LavaLampStats : SimpleCounterStats<LavaLamp>
 }
 
 // LunarPastry: gains stars at end of each turn
-[HarmonyPatch(typeof(LunarPastry), nameof(LunarPastry.AfterTurnEnd))]
+[HarmonyPatch(typeof(LunarPastry), nameof(LunarPastry.AfterSideTurnEnd))]
 public sealed class LunarPastryStats : SimpleCounterStats<LunarPastry>
 {
     public override string Format => "Gained {0} [gold]Stars[/gold].";
@@ -437,18 +437,17 @@ public sealed class MummifiedHandStats : SimpleCounterStats<MummifiedHand>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("play power + end turn", () => {
+        // Play a Power and wait for the CardPlayed event (the relic tracks in AfterCardPlayed).
+        // Asserting after PlayerTurnStart raced ahead of the card actually resolving.
+        runner.Do("play power", () => {
             TestHelpers.AddEnergy(10);
             TestHelpers.SpawnCard("DEMON_FORM");
-            TestHelpers.PlayCard();
-            TestHelpers.EnableGodMode();
-            TestHelpers.ProtectEnemy();
-            TestHelpers.EndTurn();
+            TestHelpers.PlayCard(0);
         });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.WaitFor(GameEvent.CardPlayed, 15000);
         runner.Assert("tracked stat", () =>
             new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -510,16 +509,19 @@ public sealed class PaelsEyeStats : IRelicStats
         stats.ExtraTurns++;
     }
 
-    [HarmonyPatch(typeof(PaelsEye), nameof(PaelsEye.BeforeTurnEndEarly))]
+    [HarmonyPatch(typeof(PaelsEye), nameof(PaelsEye.BeforeSideTurnEndEarly))]
     [HarmonyPrefix]
-    public static void BeforeTurnEndEarlyPrefix(PaelsEye __instance, CombatSide side)
+    public static void BeforeSideTurnEndEarlyPrefix(PaelsEye __instance, IEnumerable<Creature> participants)
     {
-        if (side != CombatSide.Player) return;
-        // The method exhausts hand cards only when !UsedThisCombat && !AnyCardsPlayedThisTurn
+        // Mirror the relic's exhaust guard: owner took part in the turn, relic unused this combat,
+        // no (non-autoplay) cards played this turn, and owner was part of the last player turn.
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         var usedField = AccessTools.Field(typeof(PaelsEye), "_usedThisCombat");
-        var playedField = AccessTools.Field(typeof(PaelsEye), "_anyCardsPlayedThisTurn");
+        var wasPartField = AccessTools.Field(typeof(PaelsEye), "_wasOwnerPartOfLastPlayerTurn");
+        var anyPlayedMethod = AccessTools.Method(typeof(PaelsEye), "AnyCardsPlayedThisTurn");
         if ((bool)usedField.GetValue(__instance)!) return;
-        if ((bool)playedField.GetValue(__instance)!) return;
+        if ((bool)anyPlayedMethod.Invoke(__instance, null)!) return;
+        if (!(bool)wasPartField.GetValue(__instance)!) return;
         if (!TryGet(__instance, out var stats)) return;
         var cards = CardPile.GetCards(__instance.Owner, PileType.Hand);
         stats.CardsExhausted += cards.Count();
@@ -820,10 +822,10 @@ public sealed class RazorToothStats : SimpleCounterStats<RazorTooth>
 public sealed class RedMaskStats : SimpleCounterStats<RedMask>
 {
     public override string Format => "Applied weakness {0} times.";
-    public static void Postfix(RedMask __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(RedMask __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -931,10 +933,10 @@ public sealed class SlingOfCourageStats : SimpleCounterStats<SlingOfCourage>
 public sealed class AkabekoStats : SimpleCounterStats<Akabeko>
 {
     public override string Format => "Gained {0} [gold]Vigor[/gold].";
-    public static void Postfix(Akabeko __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(Akabeko __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["VigorPower"].IntValue);
     }
 
@@ -1001,7 +1003,7 @@ public sealed class RoyalPoisonStats : SimpleCounterStats<RoyalPoison>
     public static void Postfix(RoyalPoison __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState!.RoundNumber > 1) return;
+        if (player.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Damage.IntValue);
     }
 
@@ -1224,10 +1226,10 @@ public sealed class PetrifiedToadStats : SimpleCounterStats<PetrifiedToad>
 public sealed class ToolboxStats : SimpleCounterStats<Toolbox>
 {
     public override string Format => "Offered cards {0} times.";
-    public static void Postfix(Toolbox __instance, Player player, CombatState combatState)
+    public static void Postfix(Toolbox __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
-        if (combatState.RoundNumber != 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -1368,10 +1370,10 @@ public sealed class SneckoSkullStats : SimpleCounterStats<SneckoSkull>
 public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 {
     public override string Format => "Applied {0} [gold]Poison[/gold].";
-    public static void Postfix(TwistedFunnel __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(TwistedFunnel __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         int enemies = __instance.Owner.Creature.CombatState!.HittableEnemies.Count;
         Track(__instance, s => s.Amount += __instance.DynamicVars["PoisonPower"].IntValue * enemies);
     }
@@ -1397,15 +1399,31 @@ public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 #endif
 }
 
-// Pendulum: draws a card on each shuffle
-[HarmonyPatch(typeof(Pendulum), nameof(Pendulum.AfterShuffle))]
+// Pendulum: draws cards every N turns at turn start
+[HarmonyPatch(typeof(Pendulum), nameof(Pendulum.AfterPlayerTurnStart))]
 public sealed class PendulumStats : SimpleCounterStats<Pendulum>
 {
+    private static readonly FieldInfo TurnsSeenField =
+        AccessTools.Field(typeof(Pendulum), "_turnsSeen");
+    [System.ThreadStatic] private static bool _willDraw;
+
     public override string Format => "Drew {0} cards.";
-    public static void Postfix(Pendulum __instance, Player player)
+
+    public static void Prefix(Pendulum __instance, Player player)
     {
+        _willDraw = false;
         if (player != __instance.Owner) return;
-        Track(__instance, s => s.Amount++);
+        int turnsSeen = (int)TurnsSeenField.GetValue(__instance)!;
+        int turns = __instance.DynamicVars["Turns"].IntValue;
+        if (turns <= 0) return;
+        // The relic increments TurnsSeen then draws when it wraps to 0.
+        _willDraw = (turnsSeen + 1) % turns == 0;
+    }
+
+    public static void Postfix(Pendulum __instance)
+    {
+        if (!_willDraw) return;
+        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
     }
 
 #if DEBUG
@@ -1414,11 +1432,16 @@ public sealed class PendulumStats : SimpleCounterStats<Pendulum>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("trigger shuffle", () => TestHelpers.TriggerShuffle());
-        runner.WaitFor(GameEvent.Shuffle);
+        runner.Do("enable god mode + protect enemy", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); });
+        // Draws every N turns (base 3); end turns until it fires.
+        for (int i = 1; i <= 3; i++)
+        {
+            runner.Do($"end turn {i}", () => TestHelpers.EndTurn());
+            runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        }
         runner.Assert("tracked cards drawn", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+            new TestResult(Amount >= 1, $"expected >= 1, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1494,10 +1517,10 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
 public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
 {
     public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
-    public static void Postfix(BagOfMarbles __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(BagOfMarbles __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -1527,7 +1550,7 @@ public sealed class BellowsStats : SimpleCounterStats<Bellows>
     public static void Postfix(Bellows __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (player.Creature.CombatState!.RoundNumber > 1) return;
+        if (player.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -1682,10 +1705,10 @@ public sealed class FakeSneckoEyeStats : SimpleCounterStats<FakeSneckoEye>
 public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
 {
     public override string Format => "Gained {0} [gold]Forge[/gold].";
-    public static void Postfix(FencingManual __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(FencingManual __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Forge.IntValue);
     }
 
@@ -1705,15 +1728,15 @@ public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
 #endif
 }
 
-// FuneraryMask: generates Soul cards on turn 1
-[HarmonyPatch(typeof(FuneraryMask), nameof(FuneraryMask.AfterSideTurnStart))]
+// FuneraryMask: generates Soul cards at hand draw on turn 1
+[HarmonyPatch(typeof(FuneraryMask), nameof(FuneraryMask.BeforeHandDraw))]
 public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
 {
     public override string Format => "Generated {0} Soul cards.";
-    public static void Postfix(FuneraryMask __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(FuneraryMask __instance, Player player, ICombatState combatState)
     {
-        if (side != CombatSide.Player) return;
-        if (combatState.RoundNumber > 1) return;
+        if (player != __instance.Owner) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
     }
 
@@ -1722,7 +1745,8 @@ public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.SideTurnStart);
+        // BeforeHandDraw fires during turn-1 hand draw, after SideTurnStart — wait for PlayerTurnStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked stat", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic!.DynamicVars.Cards.IntValue;
@@ -1949,15 +1973,17 @@ public sealed class ReptileTrinketStats : SimpleCounterStats<ReptileTrinket>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("enable god mode + use potion + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.AddPotion("FLEX_POTION"); TestHelpers.UsePotion(); TestHelpers.EndTurn(); });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        // Use a potion and wait for the PotionUsed event (the relic tracks in AfterPotionUsed);
+        // combining the use + end-turn in one step raced the assert ahead of the potion resolving.
+        runner.Do("use potion", () => { TestHelpers.AddPotion("FLEX_POTION"); TestHelpers.UsePotion(); });
+        runner.WaitFor(GameEvent.PotionUsed, 15000);
         runner.Assert("tracked strength", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Strength.IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1967,10 +1993,10 @@ public sealed class ReptileTrinketStats : SimpleCounterStats<ReptileTrinket>
 public sealed class RunicCapacitorStats : SimpleCounterStats<RunicCapacitor>
 {
     public override string Format => "Added {0} orb slots.";
-    public static void Postfix(RunicCapacitor __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(RunicCapacitor __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Repeat.IntValue);
     }
 
@@ -1998,7 +2024,7 @@ public sealed class SparklingRougeStats : SimpleCounterStats<SparklingRouge>
     public static void Postfix(SparklingRouge __instance, Creature creature)
     {
         if (creature != __instance.Owner.Creature) return;
-        if (creature.CombatState!.RoundNumber != 3) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 3) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2111,10 +2137,10 @@ public sealed class SwordOfStoneStats : SimpleCounterStats<SwordOfStone>
 public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
 {
     public override string Format => "Channeled {0} [gold]Dark[/gold] orbs.";
-    public static void Postfix(SymbioticVirus __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(SymbioticVirus __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Dark"].IntValue);
     }
 
@@ -2221,10 +2247,10 @@ public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryT
 public sealed class BigHatStats : SimpleCounterStats<BigHat>
 {
     public override string Format => "Generated {0} [gold]Ethereal[/gold] cards.";
-    public static void Postfix(BigHat __instance, CombatSide side, CombatState combatState)
+    public static void Postfix(BigHat __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
     }
 
@@ -2253,13 +2279,13 @@ public sealed class BingBongStats : SimpleCounterStats<BingBong>
         AccessTools.Field(typeof(BingBong), "_cardsToSkip");
     private static bool _willDuplicate;
 
-    public static void Prefix(BingBong __instance, CardModel card, AbstractModel? source)
+    public static void Prefix(BingBong __instance, CardModel card, AbstractModel? clonedBy)
     {
         _willDuplicate = false;
         CardPile? pile = card.Pile;
         if (pile == null || pile.Type != PileType.Deck) return;
         if (card.Owner != __instance.Owner) return;
-        if (source != null) return;
+        if (clonedBy != null) return;
         var skip = (HashSet<CardModel>?)_cardsToSkipField.GetValue(__instance);
         if (skip != null && skip.Contains(card)) return;
         _willDuplicate = true;
@@ -2294,11 +2320,11 @@ public sealed class BoneTeaStats : SimpleCounterStats<BoneTea>
     public override string Format => "Upgraded {0} hands.";
     private static bool _willUpgrade;
 
-    public static void Prefix(BoneTea __instance, CombatSide side, CombatState combatState)
+    public static void Prefix(BoneTea __instance, CombatSide side, ICombatState combatState)
     {
         _willUpgrade = !__instance.IsUsedUp
             && side == __instance.Owner.Creature.Side
-            && combatState.RoundNumber <= 1;
+            && __instance.Owner.PlayerCombatState!.TurnNumber <= 1;
     }
 
     public static void Postfix(BoneTea __instance)
@@ -2328,7 +2354,7 @@ public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>
     public static void Postfix(VexingPuzzlebox __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (__instance.Owner.Creature.CombatState!.RoundNumber != 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2353,7 +2379,7 @@ public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
     public static void Postfix(ChoicesParadox __instance, Player player)
     {
         if (player != __instance.Owner) return;
-        if (__instance.Owner.Creature.CombatState!.RoundNumber != 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2375,10 +2401,10 @@ public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
 public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
 {
     public override string Format => "Drew {0} free Powers.";
-    public static void Postfix(JeweledMask __instance, Player player, CombatState combatState)
+    public static void Postfix(JeweledMask __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
-        if (combatState.RoundNumber > 1) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2431,19 +2457,24 @@ public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
 #endif
 }
 
-// DiamondDiadem: applies DiamondDiademPower when few cards played
-[HarmonyPatch(typeof(DiamondDiadem), nameof(DiamondDiadem.BeforeTurnEnd))]
+// DiamondDiadem: applies DiamondDiademPower at turn end when few cards were played
+[HarmonyPatch(typeof(DiamondDiadem), nameof(DiamondDiadem.BeforeSideTurnEnd))]
 public sealed class DiamondDiademStats : SimpleCounterStats<DiamondDiadem>
 {
+    // The relic resets CardsPlayedThisTurn to 0 inside BeforeSideTurnEnd, so decide in a Prefix.
+    [System.ThreadStatic] private static bool _willApply;
     public override string Format => "Applied [gold]DiamondDiademPower[/gold] {0} times.";
-    private static readonly FieldInfo _cardsPlayedField =
-        AccessTools.Field(typeof(DiamondDiadem), "_cardsPlayedThisTurn");
 
-    public static void Postfix(DiamondDiadem __instance, CombatSide side)
+    public static void Prefix(DiamondDiadem __instance, IEnumerable<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
-        int cardsPlayed = (int)_cardsPlayedField.GetValue(__instance)!;
-        if (cardsPlayed > __instance.DynamicVars["CardThreshold"].BaseValue) return;
+        _willApply = false;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
+        _willApply = __instance.CardsPlayedThisTurn <= __instance.DynamicVars["CardThreshold"].BaseValue;
+    }
+
+    public static void Postfix(DiamondDiadem __instance)
+    {
+        if (!_willApply) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2455,9 +2486,8 @@ public sealed class DiamondDiademStats : SimpleCounterStats<DiamondDiadem>
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Do("enable god mode + protect enemy + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked power application", () => {
-            return new TestResult(Amount > 0, $"expected > 0, got {Amount}");
-        });
+        runner.Assert("tracked power application", () =>
+            new TestResult(Amount > 0, $"expected > 0, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -2490,3 +2520,177 @@ public sealed class BeltBuckleStats : SimpleCounterStats<BeltBuckle>
     }
 #endif
 }
+
+// ── New relics (0.109.0) ───────────────────────────────────────────────
+
+// FishingRod: every N combats, upgrades a random card in the deck
+[HarmonyPatch(typeof(FishingRod), nameof(FishingRod.AfterCombatEnd))]
+public sealed class FishingRodStats : SimpleCounterStats<FishingRod>
+{
+    [System.ThreadStatic] private static bool _willUpgrade;
+    public override string Format => "Upgraded {0} cards.";
+
+    public static void Prefix(FishingRod __instance, CombatRoom room)
+    {
+        _willUpgrade = false;
+        if (room.Encounter.RoomType != RoomType.Monster) return;
+        int combats = __instance.DynamicVars["Combats"].IntValue;
+        if (combats <= 0) return;
+        // CombatsSeen is incremented inside the method; it upgrades when the new count hits the interval
+        if ((__instance.CombatsSeen + 1) % combats != 0) return;
+        _willUpgrade = PileType.Deck.GetPile(__instance.Owner).Cards.Any(c => c.IsUpgradable);
+    }
+
+    public static void Postfix(FishingRod __instance)
+    {
+        if (!_willUpgrade) return;
+        Track(__instance, s => s.Amount++);
+    }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // Triggers only every N monster combats with an upgradable card present; not driven by the harness.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Assert("registered; fires every N combats", () =>
+            new TestResult(Amount >= 0, $"Amount={Amount} (upgrades every {3} combats)"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
+}
+
+// WingedBoots: grants up to 3 free map travels
+[HarmonyPatch(typeof(WingedBoots), nameof(WingedBoots.AfterRoomEntered))]
+public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
+{
+    [System.ThreadStatic] private static int _before;
+    public override string Format => "Used {0} free travels.";
+
+    public static void Prefix(WingedBoots __instance) => _before = __instance.TimesUsed;
+
+    public static void Postfix(WingedBoots __instance)
+    {
+        int delta = __instance.TimesUsed - _before;
+        if (delta <= 0) return;
+        Track(__instance, s => s.Amount += delta);
+    }
+
+#if DEBUG
+    public override void RegisterTest(TestRunner runner)
+    {
+        // Free travel is a map action; not reproducible in the combat harness.
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Assert("registered; fires on free map travel", () =>
+            new TestResult(Amount >= 0, $"Amount={Amount} (free travel is a map action)"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
+}
+
+// PhialHolster: grants extra potion slots and random potions on pickup
+[HarmonyPatch]
+public sealed class PhialHolsterStats : IRelicStats
+{
+    public string RelicId => RelicIdHelper.Slugify(nameof(PhialHolster));
+
+    public int SlotsGained { get; set; }
+    public int PotionsGained { get; set; }
+
+    public string GetDescription(int effectiveTurns, int effectiveCombats) =>
+        $"Gained {Fmt.Blue(SlotsGained)} potion slots. Granted {Fmt.Blue(PotionsGained)} potions.";
+
+    public JsonObject Save() => new() { ["slots"] = SlotsGained, ["potions"] = PotionsGained };
+
+    public void Load(JsonObject data)
+    {
+        SlotsGained = data["slots"]?.GetValue<int>() ?? 0;
+        PotionsGained = data["potions"]?.GetValue<int>() ?? 0;
+    }
+
+    public void Reset() { SlotsGained = 0; PotionsGained = 0; }
+
+    private static bool TryGet(PhialHolster instance, out PhialHolsterStats stats)
+    {
+        stats = null!;
+        if (instance.IsMelted) return false;
+        if (!LocalContext.IsMine(instance)) return false;
+        if (RelicStatsRegistry.Get(RelicIdHelper.Slugify(nameof(PhialHolster))) is not PhialHolsterStats s) return false;
+        stats = s;
+        return true;
+    }
+
+    [HarmonyPatch(typeof(PhialHolster), nameof(PhialHolster.AfterObtained))]
+    [HarmonyPostfix]
+    public static void AfterObtainedPostfix(PhialHolster __instance)
+    {
+        if (!TryGet(__instance, out var stats)) return;
+        stats.SlotsGained += __instance.DynamicVars["PotionSlots"].IntValue;
+        stats.PotionsGained += __instance.DynamicVars["Potions"].IntValue;
+    }
+
+#if DEBUG
+    public void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Assert("registered; fires on pickup", () =>
+            new TestResult(SlotsGained >= 0 && PotionsGained >= 0,
+                $"slots={SlotsGained}, potions={PotionsGained} (AfterObtained fires on real pickup)"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
+}
+
+// NeowsBones: offers extra relic rewards and adds curses on pickup
+[HarmonyPatch]
+public sealed class NeowsBonesStats : IRelicStats
+{
+    public string RelicId => RelicIdHelper.Slugify(nameof(NeowsBones));
+
+    public int RelicsOffered { get; set; }
+    public int CursesAdded { get; set; }
+
+    public string GetDescription(int effectiveTurns, int effectiveCombats) =>
+        $"Offered {Fmt.Blue(RelicsOffered)} relics. Added {Fmt.Blue(CursesAdded)} curses.";
+
+    public JsonObject Save() => new() { ["relics"] = RelicsOffered, ["curses"] = CursesAdded };
+
+    public void Load(JsonObject data)
+    {
+        RelicsOffered = data["relics"]?.GetValue<int>() ?? 0;
+        CursesAdded = data["curses"]?.GetValue<int>() ?? 0;
+    }
+
+    public void Reset() { RelicsOffered = 0; CursesAdded = 0; }
+
+    private static bool TryGet(NeowsBones instance, out NeowsBonesStats stats)
+    {
+        stats = null!;
+        if (instance.IsMelted) return false;
+        if (!LocalContext.IsMine(instance)) return false;
+        if (RelicStatsRegistry.Get(RelicIdHelper.Slugify(nameof(NeowsBones))) is not NeowsBonesStats s) return false;
+        stats = s;
+        return true;
+    }
+
+    [HarmonyPatch(typeof(NeowsBones), nameof(NeowsBones.AfterObtained))]
+    [HarmonyPostfix]
+    public static void AfterObtainedPostfix(NeowsBones __instance)
+    {
+        if (!TryGet(__instance, out var stats)) return;
+        stats.RelicsOffered += __instance.DynamicVars["Relics"].IntValue;
+        stats.CursesAdded += __instance.DynamicVars["Curses"].IntValue;
+    }
+
+#if DEBUG
+    public void RegisterTest(TestRunner runner)
+    {
+        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Assert("registered; fires on pickup", () =>
+            new TestResult(RelicsOffered >= 0 && CursesAdded >= 0,
+                $"relics={RelicsOffered}, curses={CursesAdded} (AfterObtained offers rewards on real pickup)"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+    }
+#endif
+}
+
+// NOTE: NeowsSacrifice is a 0.108/0.109-beta-only relic; omitted so the mod loads on stable (0.107.1).

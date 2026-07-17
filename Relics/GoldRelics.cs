@@ -44,21 +44,16 @@ public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergin
 #endif
 }
 
-// BowlerHat: 20% bonus gold on all gold gains
-// We track in ShouldGainGold where we can see the original amount before bonus is applied
-[HarmonyPatch(typeof(BowlerHat), nameof(BowlerHat.ShouldGainGold))]
+// BowlerHat: bonus gold on all gold gains (GoldIncrease multiplier, 1.25 = +25%)
+// ModifyGoldGained returns the boosted amount; the bonus is the delta over the input.
+[HarmonyPatch(typeof(BowlerHat), nameof(BowlerHat.ModifyGoldGained))]
 public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
 {
     public override string Format => "Gained {0} bonus [gold]Gold[/gold].";
-    public static void Postfix(BowlerHat __instance, decimal amount, Player player)
+    public static void Postfix(BowlerHat __instance, decimal amount, decimal __result, Player player)
     {
         if (player != __instance.Owner) return;
-        // BowlerHat internally tracks _isApplyingBonus to avoid recursion;
-        // when _isApplyingBonus is true, this is the bonus gold being applied, not original.
-        // We detect the original call (not the recursive bonus call) by checking the field.
-        var isApplyingField = AccessTools.Field(typeof(BowlerHat), "_isApplyingBonus");
-        if ((bool)isApplyingField.GetValue(__instance)!) return;
-        int bonus = (int)Math.Floor(amount * 0.2m);
+        int bonus = (int)(__result - amount);
         if (bonus <= 0) return;
         Track(__instance, s => s.Amount += bonus);
     }
@@ -72,8 +67,9 @@ public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
         runner.Do("gain gold", () => TestHelpers.AddGold(100));
         runner.Assert("tracked bonus gold", () =>
         {
-            // BowlerHat gives 20% bonus; gaining 100 gold should yield 20 bonus
-            int expected = (int)Math.Floor(100m * 0.2m);
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            decimal mult = relic?.DynamicVars["GoldIncrease"].BaseValue ?? 1m;
+            int expected = (int)(100m * mult - 100m);
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
