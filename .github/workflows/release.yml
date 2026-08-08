@@ -3,20 +3,12 @@ on:
   push:
     tags: ['v*']
 env:
-  # Stable ref-assemblies version. Keep in sync with the build matrix below
-  # (the env context is not available inside strategy.matrix).
-  STABLE_REF_ASSEMBLIES: '0.107.1'
+  # The DLL is compiled against the newest supported game version and resolves its patch targets
+  # at runtime (Core/PatchTarget.cs), so a single artifact covers every version in SUPPORTED_REFS.
+  BUILD_REF_ASSEMBLIES: '0.110.0-beta-eecc8c4d'
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - ref-assemblies: '0.107.1'
-            label: stable
-          - ref-assemblies: '0.107.1'
-            label: beta
-    name: Build (${{ matrix.label }})
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -24,13 +16,27 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - name: Restore dependencies
-        run: dotnet restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
+        run: dotnet restore -p:RefAssembliesVersion=${{ env.BUILD_REF_ASSEMBLIES }}
       - name: Build
-        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ env.BUILD_REF_ASSEMBLIES }}
+
+      # Refuse to ship a build whose patch targets have gone stale on any supported version:
+      # a renamed hook still compiles and then silently stops tracking its relic in game.
+      - name: Audit Harmony patch targets on every supported version
+        run: |
+          for ref in 0.107.1 0.110.0-beta-eecc8c4d; do
+            echo "== $ref =="
+            dotnet restore -p:RefAssembliesVersion="$ref"
+            dotnet run --project tools/PatchAudit -- . \
+              ~/.nuget/packages/bschneppe.sts2.referenceassemblies/"$ref"/ref/net9.0/sts2.dll \
+              --allow-missing RunManager.InitializeNewRun \
+              --allow-missing NRunHistory.DisplayRun
+          done
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.label }}
+          name: build
           path: .godot/mono/temp/bin/Release/RelicStats.dll
 
   release:
@@ -47,34 +53,22 @@ jobs:
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Download stable build
+      - name: Download build
         uses: actions/download-artifact@v4
         with:
-          name: build-stable
-          path: artifacts/stable
-      - name: Download beta build
-        uses: actions/download-artifact@v4
-        with:
-          name: build-beta
-          path: artifacts/beta
-      - name: Package stable
+          name: build
+          path: artifacts
+      - name: Package
         run: |
-          mkdir -p release-stable/RelicStats
-          cp artifacts/stable/RelicStats.dll release-stable/RelicStats/
-          cp RelicStats.json release-stable/RelicStats/
-          cd release-stable
-          zip -r ../RelicStats-v${{ steps.version.outputs.version }}-stable.zip RelicStats
-      - name: Package beta
-        run: |
-          mkdir -p release-beta/RelicStats
-          cp artifacts/beta/RelicStats.dll release-beta/RelicStats/
-          cp RelicStats.json release-beta/RelicStats/
-          cd release-beta
-          zip -r ../RelicStats-v${{ steps.version.outputs.version }}-beta.zip RelicStats
+          mkdir -p release/RelicStats
+          cp artifacts/RelicStats.dll release/RelicStats/
+          cp RelicStats.json release/RelicStats/
+          cd release
+          zip -r ../RelicStats-v${{ steps.version.outputs.version }}.zip RelicStats
       - name: Restore dependencies
-        run: dotnet restore -p:RefAssembliesVersion=${{ env.STABLE_REF_ASSEMBLIES }}
+        run: dotnet restore -p:RefAssembliesVersion=${{ env.BUILD_REF_ASSEMBLIES }}
       - name: Build for NuGet
-        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ env.STABLE_REF_ASSEMBLIES }}
+        run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ env.BUILD_REF_ASSEMBLIES }}
       - name: Pack NuGet
         run: dotnet pack -c Release -o ./nupkg -p:Version=${{ steps.version.outputs.version }} --no-build
       - name: Push to nuget.org
@@ -82,9 +76,7 @@ jobs:
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            RelicStats-v${{ steps.version.outputs.version }}-stable.zip
-            RelicStats-v${{ steps.version.outputs.version }}-beta.zip
+          files: RelicStats-v${{ steps.version.outputs.version }}.zip
           generate_release_notes: true
           draft: false
           prerelease: false

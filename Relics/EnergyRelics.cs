@@ -11,6 +11,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
 using RelicStats.Core;
+using RelicStats.Patches;
 #if DEBUG
 using RelicStats.Core.Testing;
 #endif
@@ -198,7 +199,8 @@ public sealed class PrismaticGemStats : SimpleCounterStats<PrismaticGem>
     public static void Postfix(PrismaticGem __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         Track(__instance, s => s.Amount += delta);
     }
 
@@ -207,7 +209,8 @@ public sealed class PrismaticGemStats : SimpleCounterStats<PrismaticGem>
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
@@ -227,7 +230,8 @@ public sealed class PumpkinCandleStats : SimpleCounterStats<PumpkinCandle>
     public static void Postfix(PumpkinCandle __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         Track(__instance, s => s.Amount += delta);
     }
 
@@ -239,9 +243,11 @@ public sealed class PumpkinCandleStats : SimpleCounterStats<PumpkinCandle>
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
-            // PumpkinCandle gives +1 max energy only in the act it was obtained.
-            // In test harness the act condition may not be met, so accept 0.
-            return new TestResult(Amount >= 0, $"expected >=0 (PumpkinCandle +1 max energy, act-conditional), got {Amount}");
+            // Act-conditional: it either did not apply this act, or applied exactly its full value.
+            // Any other number means the counter is ticking when it should not.
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Energy.IntValue ?? 0;
+            return new TestResult(Amount == 0 || Amount == expected, $"expected 0 or {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -364,7 +370,8 @@ public sealed class PhilosophersStoneStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(PhilosophersStone __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -395,7 +402,8 @@ public sealed class PhilosophersStoneStats : IRelicStats
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var stats = RelicStatsRegistry.Get(RelicId) as PhilosophersStoneStats;
@@ -459,7 +467,8 @@ public sealed class BlessedAntlerStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(BlessedAntler __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -545,7 +554,8 @@ public sealed class BloodSoakedRoseStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(BloodSoakedRose __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -563,7 +573,8 @@ public sealed class BloodSoakedRoseStats : IRelicStats
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var stats = RelicStatsRegistry.Get(RelicId) as BloodSoakedRoseStats;
@@ -627,7 +638,8 @@ public sealed class BreadStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(Bread __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGained += delta;
     }
@@ -929,7 +941,8 @@ public sealed class EctoplasmStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(Ectoplasm __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -948,7 +961,8 @@ public sealed class EctoplasmStats : IRelicStats
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
@@ -1092,7 +1106,8 @@ public sealed class SozuStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(Sozu __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -1111,7 +1126,8 @@ public sealed class SozuStats : IRelicStats
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var stats = RelicStatsRegistry.Get(RelicId) as SozuStats;
@@ -1175,7 +1191,8 @@ public sealed class SpikedGauntletsStats : IRelicStats
     public static void ModifyMaxEnergyPostfix(SpikedGauntlets __instance, decimal __result, decimal __1)
     {
         int delta = (int)(__result - __1);
-        if (delta <= 0) return;
+        // MaxEnergy is computed, so this also fires on every UI read; count only real grants.
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyGenerated += delta;
     }
@@ -1195,7 +1212,8 @@ public sealed class SpikedGauntletsStats : IRelicStats
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        // Energy is credited at the turn-start refill, which is after CombatStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked energy", () =>
         {
             var stats = RelicStatsRegistry.Get(RelicId) as SpikedGauntletsStats;

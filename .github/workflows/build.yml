@@ -9,8 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # One DLL has to load on every version listed here: patch targets are resolved at
+        # runtime (see Core/PatchTarget.cs), so the source must compile against all of them.
         ref-assemblies:
           - '0.107.1'
+          - '0.110.0-beta-eecc8c4d'
     name: Build (ref ${{ matrix.ref-assemblies }})
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +25,13 @@ jobs:
         run: dotnet restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
       - name: Build
         run: dotnet build -c Release --no-restore -p:RefAssembliesVersion=${{ matrix.ref-assemblies }}
+
+      # Compiling is not enough: a hook the game renamed still compiles, because the base-class
+      # virtual keeps the name valid, and then throws at patch time and leaves the relic tracking
+      # nothing. This checks that each target is actually *declared* on the type it names.
+      - name: Audit Harmony patch targets
+        run: |
+          dotnet run --project tools/PatchAudit -- . \
+            ~/.nuget/packages/bschneppe.sts2.referenceassemblies/${{ matrix.ref-assemblies }}/ref/net9.0/sts2.dll \
+            --allow-missing RunManager.InitializeNewRun \
+            --allow-missing NRunHistory.DisplayRun

@@ -1,6 +1,9 @@
 #if DEBUG
+using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Hooks;
+using RelicStats.Core;
 using RelicStats.Core.Testing;
 
 namespace RelicStats.Patches;
@@ -55,9 +58,13 @@ public static class TestCombatEndPatch
     }
 }
 
-[HarmonyPatch(typeof(Hook), nameof(Hook.BeforeTurnEnd))]
+// Renamed from BeforeTurnEnd/AfterTurnEnd to the SideTurn variants after 0.107.1.
+[HarmonyPatch]
 public static class TestTurnEndPatch
 {
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.FirstDeclared(typeof(Hook), "BeforeSideTurnEnd", "BeforeTurnEnd");
+
     public static void Postfix()
     {
         TestManager.CheckTimeouts();
@@ -65,9 +72,12 @@ public static class TestTurnEndPatch
     }
 }
 
-[HarmonyPatch(typeof(Hook), nameof(Hook.AfterTurnEnd))]
+[HarmonyPatch]
 public static class TestAfterTurnEndPatch
 {
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.FirstDeclared(typeof(Hook), "AfterSideTurnEnd", "AfterTurnEnd");
+
     public static void Postfix()
     {
         TestManager.CheckTimeouts();

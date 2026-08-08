@@ -1400,31 +1400,9 @@ public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 }
 
 // Pendulum: draws cards every N turns at turn start
-[HarmonyPatch(typeof(Pendulum), nameof(Pendulum.AfterPlayerTurnStart))]
 public sealed class PendulumStats : SimpleCounterStats<Pendulum>
 {
-    private static readonly FieldInfo TurnsSeenField =
-        AccessTools.Field(typeof(Pendulum), "_turnsSeen");
-    [System.ThreadStatic] private static bool _willDraw;
-
     public override string Format => "Drew {0} cards.";
-
-    public static void Prefix(Pendulum __instance, Player player)
-    {
-        _willDraw = false;
-        if (player != __instance.Owner) return;
-        int turnsSeen = (int)TurnsSeenField.GetValue(__instance)!;
-        int turns = __instance.DynamicVars["Turns"].IntValue;
-        if (turns <= 0) return;
-        // The relic increments TurnsSeen then draws when it wraps to 0.
-        _willDraw = (turnsSeen + 1) % turns == 0;
-    }
-
-    public static void Postfix(Pendulum __instance)
-    {
-        if (!_willDraw) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
-    }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -1444,6 +1422,52 @@ public sealed class PendulumStats : SimpleCounterStats<Pendulum>
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
+}
+
+// 0.110+: ModifyHandDraw adds the cards when the turn counter wraps, so read the bonus off the hook.
+[HarmonyPatch]
+internal static class PendulumModifyHandDrawPatch
+{
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(Pendulum), nameof(Pendulum.ModifyHandDraw));
+
+    public static void Postfix(Pendulum __instance, decimal __result, decimal __1)
+    {
+        if (__result <= __1) return;
+        PendulumStats.Track(__instance, s => s.Amount += (int)(__result - __1));
+    }
+}
+
+// 0.107.1: the draw happened inside AfterPlayerTurnStart, which also advances the counter, so the
+// activation has to be predicted before the hook runs.
+[HarmonyPatch]
+internal static class PendulumAfterPlayerTurnStartPatch
+{
+    private static readonly FieldInfo? TurnsSeenField = AccessTools.Field(typeof(Pendulum), "_turnsSeen");
+    [ThreadStatic] private static bool _willDraw;
+
+    // Never bind alongside the ModifyHandDraw patch, or the draw would be counted twice.
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        AccessTools.DeclaredMethod(typeof(Pendulum), nameof(Pendulum.ModifyHandDraw)) != null
+            ? Array.Empty<MethodBase>()
+            : PatchTarget.DeclaredOrNone(typeof(Pendulum), nameof(Pendulum.AfterPlayerTurnStart));
+
+    public static void Prefix(Pendulum __instance, Player player)
+    {
+        _willDraw = false;
+        if (player != __instance.Owner || TurnsSeenField == null) return;
+        int turnsSeen = (int)TurnsSeenField.GetValue(__instance)!;
+        int turns = __instance.DynamicVars["Turns"].IntValue;
+        if (turns <= 0) return;
+        // The relic increments TurnsSeen then draws when it wraps to 0.
+        _willDraw = (turnsSeen + 1) % turns == 0;
+    }
+
+    public static void Postfix(Pendulum __instance)
+    {
+        if (!_willDraw) return;
+        PendulumStats.Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+    }
 }
 
 // ChosenCheese: gains max HP at end of combat
@@ -1816,21 +1840,14 @@ public sealed class GoldPlatedCablesStats : SimpleCounterStats<GoldPlatedCables>
 }
 
 // HandDrill: applies Vulnerable when block is broken
-[HarmonyPatch(typeof(HandDrill), nameof(HandDrill.AfterDamageGiven))]
 public sealed class HandDrillStats : SimpleCounterStats<HandDrill>
 {
     public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
-    public static void Postfix(HandDrill __instance, Creature? dealer, DamageResult result)
-    {
-        if (dealer != __instance.Owner.Creature && dealer?.PetOwner != __instance.Owner) return;
-        if (!result.WasBlockBroken) return;
-        Track(__instance, s => s.Amount++);
-    }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // AfterDamageGiven checks WasBlockBroken. Give enemy block, then attack to break it.
+        // Fires on block break. Give enemy block, then attack to break it.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
@@ -1844,10 +1861,40 @@ public sealed class HandDrillStats : SimpleCounterStats<HandDrill>
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("tracked block break", () =>
-            new TestResult(Amount >= 0, $"expected >= 0 (enemy block given and attacked), got {Amount}"));
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
+}
+
+// 0.110+: a dedicated hook, firing once per break.
+[HarmonyPatch]
+internal static class HandDrillAfterBlockBrokenPatch
+{
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(HandDrill), nameof(HandDrill.AfterBlockBroken));
+
+    public static void Postfix(HandDrill __instance, Creature target, Creature? breaker)
+    {
+        if (breaker != __instance.Owner.Creature && breaker?.PetOwner != __instance.Owner) return;
+        if (target.IsPlayer) return;
+        HandDrillStats.Track(__instance, s => s.Amount++);
+    }
+}
+
+// 0.107.1: fired for every damage instance; the relic checked WasBlockBroken itself.
+[HarmonyPatch]
+internal static class HandDrillAfterDamageGivenPatch
+{
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(HandDrill), nameof(HandDrill.AfterDamageGiven));
+
+    public static void Postfix(HandDrill __instance, Creature? dealer, DamageResult result)
+    {
+        if (dealer != __instance.Owner.Creature && dealer?.PetOwner != __instance.Owner) return;
+        if (!result.WasBlockBroken) return;
+        HandDrillStats.Track(__instance, s => s.Amount++);
+    }
 }
 
 // HelicalDart: gains Dexterity from playing Shivs
@@ -2161,10 +2208,16 @@ public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
 }
 
 // ToastyMittens: gains Strength and exhausts a card each turn
-[HarmonyPatch(typeof(ToastyMittens), nameof(ToastyMittens.BeforeHandDraw))]
+[HarmonyPatch]
 public sealed class ToastyMittensStats : SimpleCounterStats<ToastyMittens>
 {
     public override string Format => "Gained {0} [gold]Strength[/gold] and exhausted cards.";
+
+    // Both versions name their Player parameter "player", so one postfix covers either.
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.FirstDeclared(typeof(ToastyMittens),
+            nameof(ToastyMittens.AfterPlayerTurnStart), nameof(ToastyMittens.BeforeHandDraw));
+
     public static void Postfix(ToastyMittens __instance, Player player)
     {
         if (player != __instance.Owner.Creature.Player) return;
@@ -2314,22 +2367,23 @@ public sealed class BingBongStats : SimpleCounterStats<BingBong>
 }
 
 // BoneTea: upgrades hand on turn 1 (limited uses)
-[HarmonyPatch(typeof(BoneTea), nameof(BoneTea.AfterSideTurnStart))]
+[HarmonyPatch]
 public sealed class BoneTeaStats : SimpleCounterStats<BoneTea>
 {
     public override string Format => "Upgraded {0} hands.";
-    private static bool _willUpgrade;
+    [ThreadStatic] private static int _combatsLeftBefore;
 
-    public static void Prefix(BoneTea __instance, CombatSide side, ICombatState combatState)
-    {
-        _willUpgrade = !__instance.IsUsedUp
-            && side == __instance.Owner.Creature.Side
-            && __instance.Owner.PlayerCombatState!.TurnNumber <= 1;
-    }
+    // Watch the relic's own use counter instead of re-deriving each version's trigger conditions:
+    // it decrements exactly when the hand is upgraded, in both versions.
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.FirstDeclared(typeof(BoneTea),
+            nameof(BoneTea.AfterPlayerTurnStart), nameof(BoneTea.AfterSideTurnStart));
+
+    public static void Prefix(BoneTea __instance) => _combatsLeftBefore = __instance.CombatsLeft;
 
     public static void Postfix(BoneTea __instance)
     {
-        if (!_willUpgrade) return;
+        if (__instance.CombatsLeft >= _combatsLeftBefore) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2338,7 +2392,8 @@ public sealed class BoneTeaStats : SimpleCounterStats<BoneTea>
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.SideTurnStart);
+        // 0.110 upgrades the hand in AfterPlayerTurnStart, which is after SideTurnStart.
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("tracked upgrade", () =>
             new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
@@ -2457,40 +2512,75 @@ public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
 #endif
 }
 
-// DiamondDiadem: applies DiamondDiademPower at turn end when few cards were played
-[HarmonyPatch(typeof(DiamondDiadem), nameof(DiamondDiadem.BeforeSideTurnEnd))]
+// DiamondDiadem: redesigned in 0.110 — was a power applied at turn end when few cards had been
+// played, now Block granted on the first turn. Tracked quantity and label follow the version.
 public sealed class DiamondDiademStats : SimpleCounterStats<DiamondDiadem>
 {
-    // The relic resets CardsPlayedThisTurn to 0 inside BeforeSideTurnEnd, so decide in a Prefix.
-    [System.ThreadStatic] private static bool _willApply;
-    public override string Format => "Applied [gold]DiamondDiademPower[/gold] {0} times.";
+    internal static readonly bool GrantsBlock =
+        AccessTools.DeclaredMethod(typeof(DiamondDiadem), nameof(DiamondDiadem.AfterSideTurnStart)) != null;
 
-    public static void Prefix(DiamondDiadem __instance, IEnumerable<Creature> participants)
-    {
-        _willApply = false;
-        if (!participants.Contains(__instance.Owner.Creature)) return;
-        _willApply = __instance.CardsPlayedThisTurn <= __instance.DynamicVars["CardThreshold"].BaseValue;
-    }
-
-    public static void Postfix(DiamondDiadem __instance)
-    {
-        if (!_willApply) return;
-        Track(__instance, s => s.Amount++);
-    }
+    public override string Format => GrantsBlock
+        ? "Granted {0} [gold]Block[/gold]."
+        : "Applied [gold]DiamondDiademPower[/gold] {0} times.";
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
+        // 0.110 fires this on the owner's first turn; 0.107.1 fired it at turn end. Ending a turn
+        // covers both, and the tracked quantity differs per version (Block vs. activations).
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Do("enable god mode + protect enemy + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked power application", () =>
+        runner.Assert("tracked activation", () =>
             new TestResult(Amount > 0, $"expected > 0, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
+}
+
+// 0.110+: grants Block at the start of the owner's first turn.
+[HarmonyPatch]
+internal static class DiamondDiademAfterSideTurnStartPatch
+{
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(DiamondDiadem), nameof(DiamondDiadem.AfterSideTurnStart));
+
+    public static void Postfix(DiamondDiadem __instance, IReadOnlyList<Creature> participants)
+    {
+        if (!participants.Contains(__instance.Owner.Creature)) return;
+        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
+        DiamondDiademStats.Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
+    }
+}
+
+// 0.107.1: the relic zeroes its own counter inside the hook, so decide in a Prefix.
+// CardsPlayedThisTurn no longer exists in 0.110, hence the reflection.
+[HarmonyPatch]
+internal static class DiamondDiademBeforeSideTurnEndPatch
+{
+    private static readonly PropertyInfo? CardsPlayedThisTurn =
+        AccessTools.Property(typeof(DiamondDiadem), "CardsPlayedThisTurn");
+    [ThreadStatic] private static bool _willApply;
+
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(DiamondDiadem), nameof(DiamondDiadem.BeforeSideTurnEnd));
+
+    public static void Prefix(DiamondDiadem __instance, IEnumerable<Creature> participants)
+    {
+        _willApply = false;
+        if (CardsPlayedThisTurn == null) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
+        var played = (int)CardsPlayedThisTurn.GetValue(__instance)!;
+        _willApply = played <= __instance.DynamicVars["CardThreshold"].BaseValue;
+    }
+
+    public static void Postfix(DiamondDiadem __instance)
+    {
+        if (!_willApply) return;
+        DiamondDiademStats.Track(__instance, s => s.Amount++);
+    }
 }
 
 // BeltBuckle: grants Dexterity when no potions held

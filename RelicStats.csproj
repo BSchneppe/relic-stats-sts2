@@ -4,7 +4,9 @@
     <Nullable>enable</Nullable>
     <RootNamespace>RelicStats</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
-    <RefAssembliesVersion Condition="'$(RefAssembliesVersion)' == ''">0.107.1</RefAssembliesVersion>
+    <!-- Newest supported game version. Patch targets resolve at runtime (Core/PatchTarget.cs),
+         so one DLL also loads on older versions; CI audits every version it claims to support. -->
+    <RefAssembliesVersion Condition="'$(RefAssembliesVersion)' == ''">0.110.0-beta-eecc8c4d</RefAssembliesVersion>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
 
     <!-- NuGet package metadata -->
@@ -58,11 +60,11 @@
     <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <!-- Exclude test project from Godot SDK's auto-globbing -->
+  <!-- Exclude test and tooling projects from Godot SDK's auto-globbing -->
   <ItemGroup>
-    <Compile Remove="tests/**" />
-    <None Remove="tests/**" />
-    <EmbeddedResource Remove="tests/**" />
+    <Compile Remove="tests/**;tools/**" />
+    <None Remove="tests/**;tools/**" />
+    <EmbeddedResource Remove="tests/**;tools/**" />
   </ItemGroup>
 
   <Target Name="CopyModFiles" AfterTargets="Build">
