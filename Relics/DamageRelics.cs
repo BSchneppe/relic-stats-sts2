@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -10,6 +9,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.ValueProps;
 using RelicStats.Core;
+using RelicStats.Patches;
 #if DEBUG
 using RelicStats.Core.Testing;
 #endif
@@ -336,17 +336,17 @@ public sealed class TingshaStats : SimpleCounterStats<Tingsha>
 }
 
 // --- ModifyDamageAdditive relics ---
-// These are called per-target, so we deduplicate by cardSource to avoid multi-counting.
+// These also fire whenever a card redraws its damage number, so they only count outside
+// DamagePreviewScope. Real damage runs the hook once per target and the bonus applies to each,
+// so every non-preview invocation counts.
 
 [HarmonyPatch(typeof(FakeStrikeDummy), nameof(FakeStrikeDummy.ModifyDamageAdditive))]
 public sealed class FakeStrikeDummyStats : SimpleCounterStats<FakeStrikeDummy>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to Strikes.";
-    [ThreadStatic] private static CardModel? _lastCard;
     public static void Postfix(decimal __result, FakeStrikeDummy __instance, CardModel? cardSource)
     {
-        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
-        _lastCard = cardSource;
+        if (__result == 0m || cardSource == null || DamagePreviewScope.IsPreview) return;
         Track(__instance, s => s.Amount += (int)__result);
     }
 
@@ -377,11 +377,9 @@ public sealed class FakeStrikeDummyStats : SimpleCounterStats<FakeStrikeDummy>
 public sealed class StrikeDummyStats : SimpleCounterStats<StrikeDummy>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to Strikes.";
-    [ThreadStatic] private static CardModel? _lastCard;
     public static void Postfix(decimal __result, StrikeDummy __instance, CardModel? cardSource)
     {
-        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
-        _lastCard = cardSource;
+        if (__result == 0m || cardSource == null || DamagePreviewScope.IsPreview) return;
         Track(__instance, s => s.Amount += (int)__result);
     }
 
@@ -412,11 +410,9 @@ public sealed class StrikeDummyStats : SimpleCounterStats<StrikeDummy>
 public sealed class MiniatureCannonStats : SimpleCounterStats<MiniatureCannon>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to upgraded attacks.";
-    [ThreadStatic] private static CardModel? _lastCard;
     public static void Postfix(decimal __result, MiniatureCannon __instance, CardModel? cardSource)
     {
-        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
-        _lastCard = cardSource;
+        if (__result == 0m || cardSource == null || DamagePreviewScope.IsPreview) return;
         Track(__instance, s => s.Amount += (int)__result);
     }
 
@@ -438,7 +434,7 @@ public sealed class MiniatureCannonStats : SimpleCounterStats<MiniatureCannon>
         runner.Assert("tracked bonus for upgraded card", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = (int)(relic?.DynamicVars["ExtraDamage"]?.BaseValue ?? 0);
-            return new TestResult(Amount >= 0, $"expected >= 0 (upgraded attack should trigger), got {Amount}");
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -449,11 +445,9 @@ public sealed class MiniatureCannonStats : SimpleCounterStats<MiniatureCannon>
 public sealed class MysticLighterStats : SimpleCounterStats<MysticLighter>
 {
     public override string Format => "Added {0} [gold]Damage[/gold] to enchanted attacks.";
-    [ThreadStatic] private static CardModel? _lastCard;
     public static void Postfix(decimal __result, MysticLighter __instance, CardModel? cardSource)
     {
-        if (__result == 0m || cardSource == null || cardSource == _lastCard) return;
-        _lastCard = cardSource;
+        if (__result == 0m || cardSource == null || DamagePreviewScope.IsPreview) return;
         Track(__instance, s => s.Amount += (int)__result);
     }
 
@@ -475,7 +469,7 @@ public sealed class MysticLighterStats : SimpleCounterStats<MysticLighter>
         runner.Assert("tracked bonus for enchanted card", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Damage.IntValue ?? 0;
-            return new TestResult(Amount >= 0, $"expected >= 0 (enchanted attack should trigger), got {Amount}");
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }

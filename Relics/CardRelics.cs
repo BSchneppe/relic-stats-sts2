@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
@@ -108,12 +109,18 @@ public sealed class BoomingConchStats : SimpleCounterStats<BoomingConch>
 #endif
 }
 
-// Fiddle: +2 cards drawn (late modifier, every turn)
-[HarmonyPatch(typeof(Fiddle), nameof(Fiddle.ModifyHandDrawLate))]
+// Fiddle: +2 cards drawn every turn
+[HarmonyPatch]
 public sealed class FiddleStats : SimpleCounterStats<Fiddle>
 {
     public override string Format => "Drew {0} additional cards.";
-    public static void Postfix(Fiddle __instance, Player player, decimal __result, decimal __1)
+
+    // Renamed in 0.110; both take (Player, decimal count), so one postfix covers either.
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.FirstDeclared(typeof(Fiddle),
+            nameof(Fiddle.ModifyHandDraw), nameof(Fiddle.ModifyHandDrawLate));
+
+    public static void Postfix(Fiddle __instance, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
         Track(__instance, s => s.Amount += (int)(__result - __1));
