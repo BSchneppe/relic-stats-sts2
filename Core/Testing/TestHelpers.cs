@@ -570,9 +570,15 @@ public static class TestHelpers
 
     // --- Card manipulation ---
 
+    /// <summary>
+    /// Enchants a card in hand. Unlike <see cref="SpawnCard"/> the id is not fuzzy-matched, so it
+    /// must name a real enchantment; an unknown one is logged rather than silently doing nothing.
+    /// </summary>
     public static void EnchantCard(string enchantmentId, int handIndex = 0)
     {
-        _enchantCmd.Value.Process(Player, new[] { enchantmentId, "1", handIndex.ToString() });
+        var result = _enchantCmd.Value.Process(Player, new[] { enchantmentId, "1", handIndex.ToString() });
+        if (!result.success)
+            MainFile.Logger.Warn($"[EnchantCard] '{enchantmentId}' failed: {result.msg}");
     }
 
     public static void UpgradeCard(int handIndex = 0)

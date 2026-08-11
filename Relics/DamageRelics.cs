@@ -462,7 +462,7 @@ public sealed class MysticLighterStats : SimpleCounterStats<MysticLighter>
             TestHelpers.AddEnergy(10);
             TestHelpers.ProtectEnemy();
             TestHelpers.SpawnCard("STRIKE");
-            TestHelpers.EnchantCard("FIRE");
+            TestHelpers.EnchantCard("SHARP");
             TestHelpers.PlayThenEndTurn(1, 0);
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
