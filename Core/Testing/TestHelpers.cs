@@ -41,13 +41,27 @@ public static class TestHelpers
 
     public static Player? Player { get; set; }
 
+    /// <summary>
+    /// Retry budget for actions that must wait for the play phase, at 0.05s per attempt.
+    /// </summary>
+    /// <remarks>
+    /// Must stay comfortably under TestRunner.WaitFor's 5s default, which most tests use: a step
+    /// that is still retrying when its WaitFor expires fails the test even though the action was
+    /// about to succeed.
+    /// </remarks>
+    private const int MaxActionAttempts = 60;
+
     public static void AddRelic(string relicId)
     {
-        if (Player == null) return;
+        if (Player == null) { MainFile.Logger.Warn($"[AddRelic] '{relicId}' skipped: no player"); return; }
         var id = relicId.ToUpperInvariant();
         var relicModel = ModelDb.AllRelics.FirstOrDefault(r => r.Id.Entry == id);
-        if (relicModel == null) return;
+        // Silently doing nothing here makes the relic's whole test assert against a relic the
+        // player never had, which reads as a tracking failure rather than a setup failure.
+        if (relicModel == null) { MainFile.Logger.Warn($"[AddRelic] '{id}' not found in ModelDb"); return; }
         Player.AddRelicInternal(relicModel.ToMutable(), silent: true);
+        var present = Player.Relics.Any(r => r.Id.Entry == id);
+        MainFile.Logger.Info($"[AddRelic] {id} added, present={present}, relicCount={Player.Relics.Count}");
     }
 
     public static void RemoveRelic(string relicId)
@@ -345,10 +359,11 @@ public static class TestHelpers
                 && Player.PlayerCombatState?.Phase == PlayerTurnPhase.Play
                 && cm.DebugOnlyGetState()?.CurrentSide == CombatSide.Player;
 
-            if (ready)
+            var hand = ready ? PileType.Hand.GetPile(Player) : null;
+            // A card spawned in the same step may not have reached the hand yet, so treat that like
+            // "not ready" and retry instead of abandoning the play silently.
+            if (ready && hand != null && hand.Cards.Count > handIndex)
             {
-                var hand = PileType.Hand.GetPile(Player);
-                if (hand == null || hand.Cards.Count <= handIndex) return;
                 var card = hand.Cards[handIndex];
                 Creature? target = null;
                 if (targetIndex >= 0)
@@ -362,13 +377,13 @@ public static class TestHelpers
                 Callable.From(() => {
                     var played = capturedCard.TryManualPlay(capturedTarget);
                     MainFile.Logger.Info($"[PlayCard] {capturedCard.Id.Entry} idx={handIndex} target={capturedTarget?.Monster?.Id.Entry ?? "none"} played={played} attempt={attempt}");
-                    if (!played && attempt < 120)
+                    if (!played && attempt < MaxActionAttempts)
                         SchedulePlayRetry(handIndex, targetIndex, attempt + 1);
                 }).CallDeferred();
                 return;
             }
 
-            if (attempt < 120)
+            if (attempt < MaxActionAttempts)
             {
                 if (attempt == 0 || attempt % 20 == 0)
                     MainFile.Logger.Info($"[PlayCard] retry {attempt}: Phase={Player.PlayerCombatState?.Phase}");
@@ -491,15 +506,39 @@ public static class TestHelpers
     /// <summary>
     /// Adds a potion to the player's belt via console command.
     /// </summary>
-    public static void AddPotion(string potionId)
+    public static void AddPotion(string potionId) => RunCmd(_potionCmd.Value, potionId);
+
+    /// <summary>
+    /// Runs a dev-console command the way DevConsole does: reporting failure and starting the task
+    /// the command returns.
+    /// </summary>
+    /// <remarks>
+    /// Calling Process directly drops that task. For commands that do their work inside it — the
+    /// potion command defers to PotionCmd.TryToProcure — the potion is never actually added, and the
+    /// test then waits for an event that can never fire. Most other commands here finish their work
+    /// before returning, which is why only potions surfaced it.
+    /// </remarks>
+    private static void RunCmd(AbstractConsoleCmd cmd, params string[] args)
     {
-        _potionCmd.Value.Process(Player, new[] { potionId });
+        var result = cmd.Process(Player, args);
+        if (!result.success)
+        {
+            MainFile.Logger.Warn($"[Cmd] {cmd.CmdName} {string.Join(" ", args)} failed: {result.msg}");
+            return;
+        }
+        if (result.task != null) TaskHelper.RunSafely(result.task);
     }
 
     /// <summary>
-    /// Uses the first potion in the player's belt by calling EnqueueManualUse.
-    /// The potion is queued for use through the action system, triggering Hook.AfterPotionUsed.
+    /// Uses the first potion in the player's belt, triggering Hook.AfterPotionUsed.
     /// </summary>
+    /// <remarks>
+    /// Drives PotionModel.OnUseWrapper directly, which is what UsePotionAction ends up calling.
+    /// EnqueueManualUse only queues a UsePotionAction on the multiplayer ActionQueueSynchronizer,
+    /// and that queue does not drain in a combat the harness jumped into with the fight command, so
+    /// the potion sat queued forever and the hook never fired. Same reasoning as SpawnCard, which
+    /// bypasses the draw pipeline.
+    /// </remarks>
     public static void UsePotion()
     {
         if (Player == null) return;
@@ -518,18 +557,50 @@ public static class TestHelpers
                 && cm.DebugOnlyGetState()?.CurrentSide == CombatSide.Player;
             if (ready)
             {
+                // The belt may not have the potion yet: AddPotion is usually called in the same
+                // step, so fall through and retry rather than giving up, which stranded the test
+                // until WaitFor(PotionUsed) timed out.
                 var potion = Player.Potions.FirstOrDefault();
-                if (potion == null) return;
-                Callable.From(() => potion.EnqueueManualUse(Player.Creature)).CallDeferred();
-                return;
+                if (potion != null)
+                {
+                    MainFile.Logger.Info($"[UsePotion] using {potion.Id.Entry} (attempt {attempt})");
+                    var target = potion.IsValidTarget(Player.Creature)
+                        ? Player.Creature
+                        : Player.Creature.CombatState?.HittableEnemies.FirstOrDefault();
+                    Callable.From(() =>
+                    {
+                        try
+                        {
+                            TaskHelper.RunSafely(potion.OnUseWrapper(new ThrowingPlayerChoiceContext(), target));
+                        }
+                        catch (Exception e)
+                        {
+                            MainFile.Logger.Warn($"[UsePotion] OnUseWrapper threw: {e.Message}");
+                        }
+                    }).CallDeferred();
+                    return;
+                }
             }
-            if (attempt < 120)
+            if (attempt < MaxActionAttempts)
             {
+                if (attempt % 20 == 0)
+                    MainFile.Logger.Info(
+                        $"[UsePotion] retry {attempt}: ready={ready} potions={Player.Potions.Count()} " +
+                        $"phase={Player.PlayerCombatState?.Phase}");
                 var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
                 timer.Timeout += () => TryUsePotion(attempt + 1);
             }
+            else
+            {
+                MainFile.Logger.Warn(
+                    $"[UsePotion] gave up after {attempt} attempts " +
+                    $"(potions={Player.Potions.Count()}, phase={Player.PlayerCombatState?.Phase})");
+            }
         }
-        catch { /* combat may have ended */ }
+        catch (Exception e)
+        {
+            MainFile.Logger.Warn($"[UsePotion] attempt {attempt} threw: {e.Message}");
+        }
     }
 
     /// <summary>

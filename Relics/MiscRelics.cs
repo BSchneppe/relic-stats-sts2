@@ -2366,41 +2366,6 @@ public sealed class BingBongStats : SimpleCounterStats<BingBong>
 #endif
 }
 
-// BoneTea: upgrades hand on turn 1 (limited uses)
-[HarmonyPatch]
-public sealed class BoneTeaStats : SimpleCounterStats<BoneTea>
-{
-    public override string Format => "Upgraded {0} hands.";
-    [ThreadStatic] private static int _combatsLeftBefore;
-
-    // Watch the relic's own use counter instead of re-deriving each version's trigger conditions:
-    // it decrements exactly when the hand is upgraded, in both versions.
-    public static IEnumerable<MethodBase> TargetMethods() =>
-        PatchTarget.FirstDeclared(typeof(BoneTea),
-            nameof(BoneTea.AfterPlayerTurnStart), nameof(BoneTea.AfterSideTurnStart));
-
-    public static void Prefix(BoneTea __instance) => _combatsLeftBefore = __instance.CombatsLeft;
-
-    public static void Postfix(BoneTea __instance)
-    {
-        if (__instance.CombatsLeft >= _combatsLeftBefore) return;
-        Track(__instance, s => s.Amount++);
-    }
-
-#if DEBUG
-    public override void RegisterTest(TestRunner runner)
-    {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Do("start fight", () => TestHelpers.StartFight());
-        // 0.110 upgrades the hand in AfterPlayerTurnStart, which is after SideTurnStart.
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked upgrade", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
-    }
-#endif
-}
-
 // VexingPuzzlebox: generates a free card on turn 1
 [HarmonyPatch(typeof(VexingPuzzlebox), nameof(VexingPuzzlebox.AfterPlayerTurnStart))]
 public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>

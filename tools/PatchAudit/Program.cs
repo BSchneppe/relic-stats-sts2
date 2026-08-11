@@ -134,8 +134,10 @@ internal sealed record PatchSite(string Where, string TypeName, string[] Candida
         foreach (var file in Directory.EnumerateFiles(sourceDir, "*.cs", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(sourceDir, file);
-            // Skip the audit's own sources and anything not shipped in the mod.
-            if (relative.StartsWith("tools") || relative.StartsWith("tests") || relative.StartsWith("obj"))
+            // Skip the audit's own sources and anything not shipped in the mod. Hidden directories
+            // cover tooling scratch space such as .claude/worktrees, which holds stale copies.
+            if (relative.StartsWith("tools") || relative.StartsWith("tests") || relative.StartsWith("obj") ||
+                relative.Split(Path.DirectorySeparatorChar).Any(part => part.StartsWith('.')))
                 continue;
 
             var text = StripComments(File.ReadAllText(file));

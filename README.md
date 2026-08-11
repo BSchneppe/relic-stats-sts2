@@ -21,7 +21,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 
 ## Coverage
 
-**191 of 298** relics tracked.
+**190 of 298** relics tracked.
 
 <details>
 <summary>Click to expand full relic coverage</summary>
@@ -52,7 +52,6 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Blood Soaked Rose | :white_check_mark: | Complex tracking |
 | Blood Vial | :white_check_mark: | Healed X HP |
 | Bone Flute | :white_check_mark: | Gained X Block |
-| Bone Tea | :white_check_mark: | Upgraded X hands |
 | Book Of Five Rings | :white_check_mark: | Healed X HP from adding cards |
 | Book Repair Knife | :white_check_mark: | Healed X HP |
 | Bookmark | :white_check_mark: | Reduced card costs X times |
