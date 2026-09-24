@@ -650,36 +650,57 @@ public sealed class TuningForkStats : SimpleCounterStats<TuningFork>
 #endif
 }
 
-// Vambrace: doubles first block gained each combat
-[HarmonyPatch(typeof(Vambrace), nameof(Vambrace.ModifyBlockMultiplicative))]
+// Vambrace: doubles the Block of the first card that gains Block each combat.
+// ModifyBlockMultiplicative is a pure calculation the game also runs for card
+// previews and hover text, so counting its result overcounts. The relic marks
+// itself used in AfterCardPlayed, once the doubled card has resolved, so count
+// that false -> true flip instead: at most once per combat.
+[HarmonyPatch(typeof(Vambrace), nameof(Vambrace.AfterCardPlayed))]
 public sealed class VambraceStats : SimpleCounterStats<Vambrace>
 {
+    private static readonly FieldInfo UsedField =
+        AccessTools.Field(typeof(Vambrace), "_blockGainedThisCombat");
+
     public override string Format => "Doubled first [gold]Block[/gold] {0} times.";
-    public static void Postfix(decimal __result, Vambrace __instance)
+
+    public static void Prefix(Vambrace __instance, out bool __state) =>
+        __state = (bool)UsedField.GetValue(__instance)!;
+
+    public static void Postfix(Vambrace __instance, bool __state)
     {
-        if (__result <= 1m) return;
+        if (__state) return; // already used earlier this combat
+        if (!(bool)UsedField.GetValue(__instance)!) return; // this card wasn't the doubled one
         Track(__instance, s => s.Amount++);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // Vambrace doubles the first block gained each combat via ModifyBlockMultiplicative.
-        // Play a block card and verify tracking incremented.
+        // Only the first Block card of the combat is doubled. Play two Defends on
+        // turn 1 and another on turn 2: the count must be exactly 1, however many
+        // times the game previews block values along the way.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight("NIBBITS_WEAK"));
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("play block card", () => {
+        runner.Do("play two block cards", () => {
             TestHelpers.AddEnergy(10);
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
             TestHelpers.SpawnCard("DEFEND");
+            TestHelpers.SpawnCard("DEFEND");
+            TestHelpers.PlayThenEndTurn(2);
+        });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("doubled exactly once on turn 1", () =>
+            new TestResult(Amount == 1, $"expected 1 doubling, got {Amount}"));
+        runner.Do("play block card on turn 2", () => {
+            TestHelpers.AddEnergy(10);
+            TestHelpers.SpawnCard("DEFEND");
             TestHelpers.PlayThenEndTurn(1);
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("doubled block at least once", () => {
-            return new TestResult(Amount >= 1, $"expected >= 1 doubling, got {Amount}");
-        });
+        runner.Assert("no further doubling on turn 2", () =>
+            new TestResult(Amount == 1, $"expected still 1 doubling, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
