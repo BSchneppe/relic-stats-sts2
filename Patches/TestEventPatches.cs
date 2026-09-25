@@ -85,7 +85,10 @@ public static class TestAfterTurnEndPatch
     }
 }
 
+// Priority.Last: the CardPlayed signal can run the next Assert synchronously, so it must come after
+// every tracker postfix on Hook.AfterCardPlayed (SpikedGauntlets patches the same method).
 [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCardPlayed))]
+[HarmonyPriority(Priority.Last)]
 public static class TestCardPlayedPatch
 {
     public static void Postfix()

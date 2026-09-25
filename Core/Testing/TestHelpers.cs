@@ -111,8 +111,17 @@ public static class TestHelpers
     // that has since failed or finished) is dropped instead of starting inside the next test.
     private static int _transitionGeneration;
 
+    private static DateTime _roomTransitionStartedAt;
+    private static string _roomTransitionLabel = "";
+
     /// <summary>True while a harness room transition is running or queued.</summary>
     public static bool IsRoomTransitionPending => _queuedTransitions > 0 || _roomTransition is { IsCompleted: false };
+
+    /// <summary>How long the running transition has been running; zero when none is.</summary>
+    public static TimeSpan RoomTransitionRunningFor =>
+        _roomTransition is { IsCompleted: false } ? DateTime.UtcNow - _roomTransitionStartedAt : TimeSpan.Zero;
+
+    public static string RoomTransitionLabel => _roomTransitionLabel;
 
     /// <summary>Drops transitions still queued by a previous test. Called by TestManager before each test.</summary>
     public static void CancelQueuedRoomTransitions()
@@ -136,15 +145,16 @@ public static class TestHelpers
                 MainFile.Logger.Info($"[RoomTransition] {label}: waiting for the previous transition to finish");
             if (attempt >= MaxTransitionWaitAttempts)
             {
-                MainFile.Logger.Warn($"[RoomTransition] {label}: previous transition still running after {attempt} attempts; starting anyway");
-            }
-            else
-            {
-                _queuedTransitions++;
-                var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
-                timer.Timeout += () => RunRoomTransition(label, start, attempt + 1, generation);
+                // Never start on top of an unfinished transition: that is exactly what leaves the
+                // game in a half-built room. Give this one up; the test fails on its own WaitFor,
+                // and TestManager aborts the run if the stuck transition never finishes.
+                MainFile.Logger.Warn($"[RoomTransition] {label}: gave up, '{_roomTransitionLabel}' still running after {attempt} waits");
                 return;
             }
+            _queuedTransitions++;
+            var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
+            timer.Timeout += () => RunRoomTransition(label, start, attempt + 1, generation);
+            return;
         }
 
         Task? task;
@@ -156,6 +166,8 @@ public static class TestHelpers
         }
         if (task == null) return;
         _roomTransition = task;
+        _roomTransitionStartedAt = DateTime.UtcNow;
+        _roomTransitionLabel = label;
         TaskHelper.RunSafely(task);
         if (attempt > 0) MainFile.Logger.Info($"[RoomTransition] {label}: started after {attempt} waits");
     }
@@ -911,16 +923,6 @@ public static class TestHelpers
             return;
         }
         TaskHelper.RunSafely(option.OnSelect());
-    }
-
-    // --- Death ---
-
-    /// <summary>Kills every enemy through the Doom path, which fires AfterDiedToDoom (Book Repair Knife).</summary>
-    public static void DoomKillEnemies()
-    {
-        var enemies = Player?.Creature.CombatState?.HittableEnemies.ToList();
-        if (enemies == null || enemies.Count == 0) return;
-        TaskHelper.RunSafely(DoomPower.DoomKill(enemies));
     }
 
     // --- Map ---

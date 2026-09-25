@@ -31,6 +31,14 @@ public class TestRunner
     public string RelicId { get; }
     public bool IsComplete { get; private set; }
 
+    // Set before cleanup runs. A hook raised synchronously by the cleanup itself must not resume
+    // the steps of a test that already failed, or run cleanup a second time.
+    private bool _finishing;
+
+    // True only while a Do step's action runs: the only window in which a signal can arrive
+    // before the WaitFor it belongs to has been reached.
+    private bool _inDoStep;
+
     /// <summary>
     /// Raised once, when the test finishes by any path: a signal, a timeout tick, or a WaitUntil
     /// poll timer. The manager must not rely on noticing IsComplete after its own calls, because a
@@ -87,11 +95,13 @@ public class TestRunner
 
     public void Signal(GameEvent gameEvent)
     {
-        if (IsComplete || _currentStep >= _steps.Count) return;
+        if (IsComplete || _finishing || _currentStep >= _steps.Count) return;
         if (_steps[_currentStep] is not WaitForStep wait)
         {
-            // Inside a Do or Assert step: remember it for the WaitFor that follows.
-            _firedDuringStep[gameEvent] = _firedDuringStep.GetValueOrDefault(gameEvent) + 1;
+            // Raised synchronously by a Do step's own action: remember it for the WaitFor that
+            // follows. Anything else that arrives outside a WaitFor is not waited for by anyone.
+            if (_inDoStep)
+                _firedDuringStep[gameEvent] = _firedDuringStep.GetValueOrDefault(gameEvent) + 1;
             return;
         }
 
@@ -117,7 +127,7 @@ public class TestRunner
 
     public void CheckTimeouts()
     {
-        if (IsComplete || _currentStep >= _steps.Count) return;
+        if (IsComplete || _finishing || _currentStep >= _steps.Count) return;
 
         // Global timeout — if the entire test has been running too long, abort
         var totalElapsed = DateTime.UtcNow - _testStarted;
@@ -172,6 +182,7 @@ public class TestRunner
 
     private void Advance()
     {
+        if (IsComplete || _finishing) return;
         while (_currentStep < _steps.Count)
         {
             var step = _steps[_currentStep];
@@ -180,6 +191,7 @@ public class TestRunner
             {
                 case DoStep doStep:
                     _firedDuringStep.Clear();
+                    _inDoStep = true;
                     try
                     {
                         MainFile.Logger.Info($"[Test:{RelicId}] Do(\"{doStep.Label}\")");
@@ -187,12 +199,14 @@ public class TestRunner
                     }
                     catch (Exception ex)
                     {
+                        _inDoStep = false;
                         MainFile.Logger.Info($"[Test:{RelicId}] Do(\"{doStep.Label}\") THREW: {ex.Message}");
                         _results.Add(new TestResult(false, $"Do(\"{doStep.Label}\") threw: {ex.Message}"));
                         _failed = true;
                         RunCleanup();
                         return;
                     }
+                    _inDoStep = false;
                     _currentStep++;
                     break;
 
@@ -204,6 +218,9 @@ public class TestRunner
                         _currentStep++;
                         break;
                     }
+                    // Waiting live now: whatever the Do step buffered and nothing consumed can no
+                    // longer be meant for a later wait.
+                    _firedDuringStep.Clear();
                     MainFile.Logger.Info($"[Test:{RelicId}] WaitFor({waitStep.Event})...");
                     _waitStarted = DateTime.UtcNow;
                     return;
@@ -267,6 +284,8 @@ public class TestRunner
 
     private void RunCleanup()
     {
+        if (_finishing) return;
+        _finishing = true;
         if (_cleanup != null)
         {
             try
