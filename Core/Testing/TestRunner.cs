@@ -18,8 +18,25 @@ public class TestRunner
     private const int GlobalTimeoutMs = 60000;
     private bool _combatWasActive;
 
+    // Events that fired while a Do step was executing. A helper that completes its game command
+    // synchronously (an exhaust with no animation, a shuffle inside a draw) raises the hook, and
+    // with it the signal, before the runner has reached the next WaitFor. Without this buffer that
+    // signal was simply dropped and the WaitFor timed out, which made such tests pass or fail on
+    // whether the game happened to yield first. The buffer is cleared when the next Do starts, so
+    // it can only satisfy the WaitFor that directly follows the step that raised it.
+    // Counted, not a set: one step can legitimately raise the same event several times (a deck add
+    // that also clones the card fires CardChangedPiles twice), and each can satisfy one WaitFor.
+    private readonly Dictionary<GameEvent, int> _firedDuringStep = new();
+
     public string RelicId { get; }
     public bool IsComplete { get; private set; }
+
+    /// <summary>
+    /// Raised once, when the test finishes by any path: a signal, a timeout tick, or a WaitUntil
+    /// poll timer. The manager must not rely on noticing IsComplete after its own calls, because a
+    /// WaitUntil step resumes the runner from a timer the manager never sees.
+    /// </summary>
+    public event Action? Completed;
     public bool IsWaiting => !IsComplete && _currentStep < _steps.Count && _steps[_currentStep] is WaitForStep;
 
     public TestRunner(string relicId)
@@ -42,6 +59,16 @@ public class TestRunner
         _steps.Add(new AssertStep(label, check));
     }
 
+    /// <summary>
+    /// Waits until <paramref name="condition"/> holds, polling every 50ms. For state that settles
+    /// after a hook with no matching event (e.g. Doom's AfterDiedToDoom runs after CombatVictory).
+    /// Times out as a failure naming <paramref name="label"/>; it never passes on its own.
+    /// </summary>
+    public void WaitUntil(string label, Func<bool> condition, int timeoutMs = 5000)
+    {
+        _steps.Add(new WaitUntilStep(label, condition, timeoutMs));
+    }
+
     public void Cleanup(Action action)
     {
         _cleanup = action;
@@ -53,6 +80,7 @@ public class TestRunner
         _failed = false;
         IsComplete = false;
         _results.Clear();
+        _firedDuringStep.Clear();
         _testStarted = DateTime.UtcNow;
         Advance();
     }
@@ -60,7 +88,12 @@ public class TestRunner
     public void Signal(GameEvent gameEvent)
     {
         if (IsComplete || _currentStep >= _steps.Count) return;
-        if (_steps[_currentStep] is not WaitForStep wait) return;
+        if (_steps[_currentStep] is not WaitForStep wait)
+        {
+            // Inside a Do or Assert step: remember it for the WaitFor that follows.
+            _firedDuringStep[gameEvent] = _firedDuringStep.GetValueOrDefault(gameEvent) + 1;
+            return;
+        }
 
         // Track that combat is active once we see any combat event
         if (!_combatWasActive)
@@ -112,7 +145,11 @@ public class TestRunner
         // If combat ended while waiting for a combat event, fail immediately
         // Only check after combat was confirmed active (CombatStart was seen)
         var cm = CombatManager.Instance;
-        if (_combatWasActive && cm != null && !cm.IsInProgress && wait.Event is GameEvent.CardPlayed
+        // Between a room transition's start and the new combat's start there is legitimately no
+        // combat in progress (the next fight is queued behind a rest site's fade-in); that is not
+        // "combat ended".
+        if (_combatWasActive && cm != null && !cm.IsInProgress && !TestHelpers.IsRoomTransitionPending
+            && wait.Event is GameEvent.CardPlayed
             or GameEvent.TurnEnd or GameEvent.AfterTurnEnd or GameEvent.PlayerTurnStart
             or GameEvent.SideTurnStart
             or GameEvent.DamageReceived or GameEvent.CardExhausted or GameEvent.CardDiscarded
@@ -142,6 +179,7 @@ public class TestRunner
             switch (step)
             {
                 case DoStep doStep:
+                    _firedDuringStep.Clear();
                     try
                     {
                         MainFile.Logger.Info($"[Test:{RelicId}] Do(\"{doStep.Label}\")");
@@ -159,8 +197,45 @@ public class TestRunner
                     break;
 
                 case WaitForStep waitStep:
+                    if (_firedDuringStep.TryGetValue(waitStep.Event, out var pending) && pending > 0)
+                    {
+                        _firedDuringStep[waitStep.Event] = pending - 1;
+                        MainFile.Logger.Info($"[Test:{RelicId}] WaitFor({waitStep.Event}) satisfied (fired during the previous step)");
+                        _currentStep++;
+                        break;
+                    }
                     MainFile.Logger.Info($"[Test:{RelicId}] WaitFor({waitStep.Event})...");
                     _waitStarted = DateTime.UtcNow;
+                    return;
+
+                case WaitUntilStep untilStep:
+                    bool met;
+                    try { met = untilStep.Condition(); }
+                    catch (Exception ex)
+                    {
+                        _results.Add(new TestResult(false, $"WaitUntil(\"{untilStep.Label}\") threw: {ex.Message}"));
+                        _failed = true;
+                        break;
+                    }
+                    if (met)
+                    {
+                        MainFile.Logger.Info($"[Test:{RelicId}] WaitUntil(\"{untilStep.Label}\") satisfied");
+                        _currentStep++;
+                        break;
+                    }
+                    if (untilStep.StartedAt == null)
+                    {
+                        untilStep.StartedAt = DateTime.UtcNow;
+                        MainFile.Logger.Info($"[Test:{RelicId}] WaitUntil(\"{untilStep.Label}\")...");
+                    }
+                    if ((DateTime.UtcNow - untilStep.StartedAt.Value).TotalMilliseconds >= untilStep.TimeoutMs)
+                    {
+                        _results.Add(new TestResult(false, $"timed out at step: WaitUntil(\"{untilStep.Label}\") after {untilStep.TimeoutMs}ms"));
+                        _failed = true;
+                        break;
+                    }
+                    var poll = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).CreateTimer(0.05);
+                    poll.Timeout += () => { if (!IsComplete) Advance(); };
                     return;
 
                 case AssertStep assertStep:
@@ -203,7 +278,9 @@ public class TestRunner
                 _results.Add(new TestResult(false, $"Cleanup threw: {ex.Message}"));
             }
         }
+        if (IsComplete) return;
         IsComplete = true;
+        Completed?.Invoke();
     }
 
     public TestResult GetFinalResult()
@@ -223,5 +300,9 @@ public class TestRunner
     private record DoStep(string Label, Action Action) : TestStep;
     private record WaitForStep(GameEvent Event, int TimeoutMs) : TestStep;
     private record AssertStep(string Label, Func<TestResult> Check) : TestStep;
+    private record WaitUntilStep(string Label, Func<bool> Condition, int TimeoutMs) : TestStep
+    {
+        public DateTime? StartedAt { get; set; }
+    }
 }
 #endif

@@ -99,10 +99,105 @@ public static class TestHelpers
     /// <summary>The player's live instance of a relic, for reading its public counters (TimesLifted, CombatsSeen…).</summary>
     public static T? GetRelic<T>() where T : RelicModel => Player?.GetRelic<T>();
 
-    public static void StartFight(string encounterId = "NIBBITS_WEAK")
+    // --- Room transitions ---
+    //
+    // Every room change the tests make (fight, room, event, ancient, map travel) goes through
+    // RunManager.EnterRoomDebug / EnterRoom. Those raise AfterRoomEntered (and CombatStart,
+    // PlayerTurnStart) from inside the room entry but then keep going: EnterRoomDebug still awaits a
+    // fade-in after the hooks have fired. A test that waits for RoomEntered and starts the next fight
+    // straight away therefore starts a second transition on top of an unfinished one. The second
+    // one's ExitCurrentRooms/EnterRoom interleave with the first, the fight is never created, and the
+    // game is left in a half-built room (no background, no UI) that every later test then fails in.
+    // The console commands also hand back the transition task, which was being dropped, so the
+    // resulting exception was never even logged.
+    //
+    // So transitions are serialized here: one runs at a time, a new one waits until the previous
+    // task has completed, and each task's exceptions are logged.
+
+    private static Task? _roomTransition;
+    private const int MaxTransitionWaitAttempts = 400; // 20s at 0.05s
+
+    // Transitions waiting for the running one to finish. They count as pending too: between the
+    // running task completing and the next retry tick starting the queued one there is no combat and
+    // no running task, and the runner must not read that gap as "combat ended".
+    private static int _queuedTransitions;
+
+    // Bumped by CancelQueuedRoomTransitions; a queued transition from an older generation (a test
+    // that has since failed or finished) is dropped instead of starting inside the next test.
+    private static int _transitionGeneration;
+
+    /// <summary>True while a harness room transition is running or queued.</summary>
+    public static bool IsRoomTransitionPending => _queuedTransitions > 0 || _roomTransition is { IsCompleted: false };
+
+    /// <summary>Drops transitions still queued by a previous test. Called by TestManager before each test.</summary>
+    public static void CancelQueuedRoomTransitions()
     {
-        _fightCmd.Value.Process(Player, new[] { encounterId });
+        _transitionGeneration++;
+        if (_queuedTransitions > 0)
+            MainFile.Logger.Info($"[RoomTransition] dropped {_queuedTransitions} queued transition(s) from the previous test");
+        _queuedTransitions = 0;
     }
+
+    private static void RunRoomTransition(string label, Func<Task?> start) =>
+        RunRoomTransition(label, start, 0, _transitionGeneration);
+
+    private static void RunRoomTransition(string label, Func<Task?> start, int attempt, int generation)
+    {
+        if (generation != _transitionGeneration) return; // cancelled; the counter was already reset
+        if (attempt > 0) _queuedTransitions--;
+        if (_roomTransition is { IsCompleted: false })
+        {
+            if (attempt == 0)
+                MainFile.Logger.Info($"[RoomTransition] {label}: waiting for the previous transition to finish");
+            if (attempt >= MaxTransitionWaitAttempts)
+            {
+                MainFile.Logger.Warn($"[RoomTransition] {label}: previous transition still running after {attempt} attempts; starting anyway");
+            }
+            else
+            {
+                _queuedTransitions++;
+                var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
+                timer.Timeout += () => RunRoomTransition(label, start, attempt + 1, generation);
+                return;
+            }
+        }
+
+        Task? task;
+        try { task = start(); }
+        catch (Exception e)
+        {
+            MainFile.Logger.Warn($"[RoomTransition] {label} threw: {e.Message}");
+            return;
+        }
+        if (task == null) return;
+        _roomTransition = task;
+        TaskHelper.RunSafely(task);
+        if (attempt > 0) MainFile.Logger.Info($"[RoomTransition] {label}: started after {attempt} waits");
+    }
+
+    /// <summary>Runs a console command whose work is a room transition, through the serializer.</summary>
+    private static void RunRoomCmd(string label, AbstractConsoleCmd cmd, params string[] args) =>
+        RunRoomTransition(label, () =>
+        {
+            var result = cmd.Process(Player, args);
+            if (!result.success)
+            {
+                MainFile.Logger.Warn($"[Cmd] {cmd.CmdName} {string.Join(" ", args)} failed: {result.msg}");
+                return null;
+            }
+            return result.task;
+        });
+
+    /// <summary>
+    /// Enters a room directly with an explicit map point type (e.g. Unknown for Planisphere), through
+    /// the transition serializer.
+    /// </summary>
+    public static void EnterDebugRoom(RoomType roomType, MapPointType pointType) =>
+        RunRoomTransition($"room {roomType}/{pointType}",
+            () => RunManager.Instance.EnterRoomDebug(roomType, pointType, null, showTransition: false));
+
+    public static void StartFight(string encounterId = "NIBBITS_WEAK") =>
+        RunRoomCmd($"fight {encounterId}", _fightCmd.Value, encounterId);
 
     public static void WinCombat()
     {
@@ -174,13 +269,13 @@ public static class TestHelpers
     public static void DealDamage(int amount)
     {
         var a = amount;
-        Callable.From(() => _damageCmd.Value.Process(Player, new[] { a.ToString() })).CallDeferred();
+        Callable.From(() => RunCmd(_damageCmd.Value, a.ToString())).CallDeferred();
     }
 
     public static void DealDamageToPlayer(int amount)
     {
         var a = amount;
-        Callable.From(() => _damageCmd.Value.Process(Player, new[] { a.ToString(), "0" })).CallDeferred();
+        Callable.From(() => RunCmd(_damageCmd.Value, a.ToString(), "0")).CallDeferred();
     }
 
     public static void GiveBlock(int amount, int targetIndex = 0)
@@ -539,8 +634,11 @@ public static class TestHelpers
         // If discard is also empty, spawn a card there so shuffle has something to work with
         if (!discardPile.Cards.Any())
             SpawnCard("STRIKE", "discard");
-        // Drawing will trigger ShuffleIfNecessary since draw pile is empty
-        DrawCards(1);
+        // Drawing will trigger ShuffleIfNecessary since draw pile is empty. The shuffle and its
+        // AfterShuffle hook complete synchronously inside the draw, which would fire the Shuffle
+        // signal while the test is still inside this Do step, before its WaitFor(Shuffle) is armed.
+        // Defer the draw so the runner reaches the WaitFor first.
+        Callable.From(() => DrawCards(1)).CallDeferred();
     }
 
     private static readonly Lazy<PotionConsoleCmd> _potionCmd = new(() => new PotionConsoleCmd());
@@ -581,14 +679,15 @@ public static class TestHelpers
     /// the potion sat queued forever and the hook never fired. Same reasoning as SpawnCard, which
     /// bypasses the draw pipeline.
     /// </remarks>
-    public static void UsePotion()
+    /// <param name="potionId">The potion to use; the first potion in the belt when null.</param>
+    public static void UsePotion(string? potionId = null)
     {
         if (Player == null) return;
-        TryUsePotion(0);
+        TryUsePotion(0, potionId?.ToUpperInvariant());
     }
 
     // Like PlayCard, a potion can only be used during the Play phase; retry until then.
-    private static void TryUsePotion(int attempt)
+    private static void TryUsePotion(int attempt, string? potionId = null)
     {
         if (Player == null) return;
         try
@@ -602,7 +701,9 @@ public static class TestHelpers
                 // The belt may not have the potion yet: AddPotion is usually called in the same
                 // step, so fall through and retry rather than giving up, which stranded the test
                 // until WaitFor(PotionUsed) timed out.
-                var potion = Player.Potions.FirstOrDefault();
+                var potion = potionId == null
+                    ? Player.Potions.FirstOrDefault()
+                    : Player.Potions.FirstOrDefault(p => p.Id.Entry == potionId);
                 if (potion != null)
                 {
                     MainFile.Logger.Info($"[UsePotion] using {potion.Id.Entry} (attempt {attempt})");
@@ -630,7 +731,7 @@ public static class TestHelpers
                         $"[UsePotion] retry {attempt}: ready={ready} potions={Player.Potions.Count()} " +
                         $"phase={Player.PlayerCombatState?.Phase}");
                 var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.05);
-                timer.Timeout += () => TryUsePotion(attempt + 1);
+                timer.Timeout += () => TryUsePotion(attempt + 1, potionId);
             }
             else
             {
@@ -651,32 +752,29 @@ public static class TestHelpers
     public static void ClearPotions()
     {
         if (Player == null) return;
+        // Not silent: the potion bar removes a holder only on the PotionDiscarded event. A silent
+        // discard left stale holders behind, and the next potion used crashed in
+        // NPotionContainer.RemoveUsed looking for a holder that was never created.
         foreach (var potion in Player.Potions.ToArray())
-            Player.DiscardPotionInternal(potion, silent: true);
+            Player.DiscardPotionInternal(potion, silent: false);
     }
 
     /// <summary>
     /// Starts an elite encounter. Uses EnterRoomDebug which auto-detects RoomType from the encounter model.
     /// </summary>
-    public static void StartEliteFight(string encounterId = "BYGONE_EFFIGY_ELITE")
-    {
-        _fightCmd.Value.Process(Player, new[] { encounterId });
-    }
+    public static void StartEliteFight(string encounterId = "BYGONE_EFFIGY_ELITE") =>
+        RunRoomCmd($"fight {encounterId}", _fightCmd.Value, encounterId);
 
     /// <summary>
     /// Starts a boss encounter. Uses EnterRoomDebug which auto-detects RoomType from the encounter model.
     /// </summary>
-    public static void StartBossFight(string encounterId = "KAISER_CRAB_BOSS")
-    {
-        _fightCmd.Value.Process(Player, new[] { encounterId });
-    }
+    public static void StartBossFight(string encounterId = "KAISER_CRAB_BOSS") =>
+        RunRoomCmd($"fight {encounterId}", _fightCmd.Value, encounterId);
 
     // --- Room navigation ---
 
-    public static void EnterRoom(string roomType)
-    {
-        Callable.From(() => _roomCmd.Value.Process(Player, new[] { roomType })).CallDeferred();
-    }
+    public static void EnterRoom(string roomType) =>
+        RunRoomCmd($"room {roomType}", _roomCmd.Value, roomType);
 
     public static void EnterRestSite() => EnterRoom("RestSite");
     public static void EnterShop() => EnterRoom("Shop");
@@ -728,15 +826,11 @@ public static class TestHelpers
 
     private static readonly Lazy<EventConsoleCmd> _eventCmd = new(() => new EventConsoleCmd());
 
-    public static void OpenAncient(string ancientId)
-    {
-        Callable.From(() => _ancientCmd.Value.Process(Player, new[] { ancientId })).CallDeferred();
-    }
+    public static void OpenAncient(string ancientId) =>
+        RunRoomCmd($"ancient {ancientId}", _ancientCmd.Value, ancientId);
 
-    public static void OpenEvent(string eventId)
-    {
-        Callable.From(() => _eventCmd.Value.Process(Player, new[] { eventId })).CallDeferred();
-    }
+    public static void OpenEvent(string eventId) =>
+        RunRoomCmd($"event {eventId}", _eventCmd.Value, eventId);
 
     // --- Enemy block ---
 
@@ -871,9 +965,8 @@ public static class TestHelpers
     /// the room, so map-travel relics (Winged Boots) see a real move. A point that is not a child of
     /// the current one counts as a non-adjacent jump.
     /// </summary>
-    public static void TravelTo(MapPoint point, RoomType roomType)
-    {
-        TaskHelper.RunSafely(RunManager.Instance.EnterMapCoordDebug(point.coord, roomType, showTransition: false));
-    }
+    public static void TravelTo(MapPoint point, RoomType roomType) =>
+        RunRoomTransition($"travel {point.coord.col},{point.coord.row} {roomType}",
+            () => RunManager.Instance.EnterMapCoordDebug(point.coord, roomType, showTransition: false));
 }
 #endif
