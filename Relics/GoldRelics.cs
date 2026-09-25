@@ -18,6 +18,7 @@ namespace RelicStats.Relics;
 public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergine>
 {
     public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(AmethystAubergine __instance, bool __result)
     {
         if (!__result) return;
@@ -82,6 +83,7 @@ public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
 public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
 {
     public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(LuckyFysh __instance, CardModel card)
     {
         CardPile? pile = card.Pile;
@@ -114,6 +116,7 @@ public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
 public sealed class MawBankStats : SimpleCounterStats<MawBank>
 {
     public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(MawBank __instance, AbstractRoom room)
     {
         if (__instance.HasItemBeenBought) return;

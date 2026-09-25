@@ -56,6 +56,7 @@ public sealed class CharonsAshesStats : SimpleCounterStats<CharonsAshes>
 public sealed class FestivePopperStats : SimpleCounterStats<FestivePopper>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold].";
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(FestivePopper __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -265,6 +266,7 @@ public sealed class ScreamingFlagonStats : SimpleCounterStats<ScreamingFlagon>
 public sealed class StoneCalendarStats : SimpleCounterStats<StoneCalendar>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold].";
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(StoneCalendar __instance, CombatSide side)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -624,6 +626,7 @@ public sealed class TheBootStats : SimpleCounterStats<TheBoot>
 public sealed class ThrowingAxeStats : SimpleCounterStats<ThrowingAxe>
 {
     public override string Format => "Doubled first card {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(int __result, ThrowingAxe __instance, CardModel card, int playCount)
     {
         if (__result <= playCount) return;

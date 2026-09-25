@@ -24,6 +24,7 @@ namespace RelicStats.Relics;
 public sealed class BlackStarStats : SimpleCounterStats<BlackStar>
 {
     public override string Format => "Gained {0} extra relic rewards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BlackStar __instance, bool __result)
     {
         if (!__result) return;
@@ -78,6 +79,7 @@ public sealed class BiiigHugStats : SimpleCounterStats<BiiigHug>
 public sealed class BurningSticksStats : SimpleCounterStats<BurningSticks>
 {
     public override string Format => "Duplicated {0} cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     private static readonly FieldInfo _wasUsedField =
         AccessTools.Field(typeof(BurningSticks), "_wasUsedThisCombat");
     private static bool _wasUnusedBeforeCall;
@@ -154,6 +156,7 @@ public sealed class ChemicalXStats : SimpleCounterStats<ChemicalX>
 public sealed class CrackedCoreStats : SimpleCounterStats<CrackedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(CrackedCore __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -182,6 +185,7 @@ public sealed class CrackedCoreStats : SimpleCounterStats<CrackedCore>
 public sealed class InfusedCoreStats : SimpleCounterStats<InfusedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(InfusedCore __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -210,6 +214,7 @@ public sealed class InfusedCoreStats : SimpleCounterStats<InfusedCore>
 public sealed class DelicateFrondStats : SimpleCounterStats<DelicateFrond>
 {
     public override string Format => "Generated potions {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(DelicateFrond __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -231,6 +236,7 @@ public sealed class DelicateFrondStats : SimpleCounterStats<DelicateFrond>
 public sealed class DivineRightStats : SimpleCounterStats<DivineRight>
 {
     public override string Format => "Gained {0} [gold]Stars[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(DivineRight __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -258,6 +264,7 @@ public sealed class DivineRightStats : SimpleCounterStats<DivineRight>
 public sealed class FresnelLensStats : SimpleCounterStats<FresnelLens>
 {
     public override string Format => "Enchanted {0} cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FresnelLens __instance, bool __result)
     {
         if (!__result) return;
@@ -285,6 +292,7 @@ public sealed class FresnelLensStats : SimpleCounterStats<FresnelLens>
 public sealed class LavaLampStats : SimpleCounterStats<LavaLamp>
 {
     public override string Format => "Upgraded card rewards {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(LavaLamp __instance, bool __result)
     {
         if (!__result) return;
@@ -342,6 +350,7 @@ public sealed class LunarPastryStats : SimpleCounterStats<LunarPastry>
 public sealed class MoltenEggStats : SimpleCounterStats<MoltenEgg>
 {
     public override string Format => "Upgraded {0} attack cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(MoltenEgg __instance, bool __result)
     {
         if (!__result) return;
@@ -369,6 +378,7 @@ public sealed class MoltenEggStats : SimpleCounterStats<MoltenEgg>
 public sealed class ToxicEggStats : SimpleCounterStats<ToxicEgg>
 {
     public override string Format => "Upgraded {0} skill cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(ToxicEgg __instance, bool __result)
     {
         if (!__result) return;
@@ -396,6 +406,7 @@ public sealed class ToxicEggStats : SimpleCounterStats<ToxicEgg>
 public sealed class FrozenEggStats : SimpleCounterStats<FrozenEgg>
 {
     public override string Format => "Upgraded {0} power cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FrozenEgg __instance, bool __result)
     {
         if (!__result) return;
@@ -559,6 +570,7 @@ public sealed class PaelsEyeStats : IRelicStats
 public sealed class PaelsWingStats : SimpleCounterStats<PaelsWing>
 {
     public override string Format => "Sacrificed {0} card rewards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(PaelsWing __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -751,6 +763,7 @@ public sealed class PhylacteryUnboundStats : IRelicStats
 public sealed class PrayerWheelStats : SimpleCounterStats<PrayerWheel>
 {
     public override string Format => "Added {0} extra card rewards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(PrayerWheel __instance, bool __result)
     {
         if (!__result) return;
@@ -822,6 +835,7 @@ public sealed class RazorToothStats : SimpleCounterStats<RazorTooth>
 public sealed class RedMaskStats : SimpleCounterStats<RedMask>
 {
     public override string Format => "Applied weakness {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RedMask __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -847,6 +861,7 @@ public sealed class RedMaskStats : SimpleCounterStats<RedMask>
 public sealed class RuinedHelmetStats : SimpleCounterStats<RuinedHelmet>
 {
     public override string Format => "Doubled strength {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RuinedHelmet __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -880,6 +895,7 @@ public sealed class RuinedHelmetStats : SimpleCounterStats<RuinedHelmet>
 public sealed class ShovelStats : SimpleCounterStats<Shovel>
 {
     public override string Format => "Offered dig {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Shovel __instance, bool __result)
     {
         if (!__result) return;
@@ -905,6 +921,7 @@ public sealed class ShovelStats : SimpleCounterStats<Shovel>
 public sealed class SlingOfCourageStats : SimpleCounterStats<SlingOfCourage>
 {
     public override string Format => "Gained {0} [gold]Strength[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SlingOfCourage __instance, AbstractRoom room)
     {
         if (room.RoomType != RoomType.Elite) return;
@@ -933,6 +950,7 @@ public sealed class SlingOfCourageStats : SimpleCounterStats<SlingOfCourage>
 public sealed class AkabekoStats : SimpleCounterStats<Akabeko>
 {
     public override string Format => "Gained {0} [gold]Vigor[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Akabeko __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -1000,6 +1018,7 @@ public sealed class MiniRegentStats : SimpleCounterStats<MiniRegent>
 public sealed class RoyalPoisonStats : SimpleCounterStats<RoyalPoison>
 {
     public override string Format => "Dealt {0} [gold]Damage[/gold] to self.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RoyalPoison __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -1178,6 +1197,7 @@ public sealed class GremlinHornStats : SimpleCounterStats<GremlinHorn>
 public sealed class VajraStats : SimpleCounterStats<Vajra>
 {
     public override string Format => "Gained {0} [gold]Strength[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Vajra __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -1205,6 +1225,7 @@ public sealed class VajraStats : SimpleCounterStats<Vajra>
 public sealed class PetrifiedToadStats : SimpleCounterStats<PetrifiedToad>
 {
     public override string Format => "Generated {0} potions.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(PetrifiedToad __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -1226,6 +1247,7 @@ public sealed class PetrifiedToadStats : SimpleCounterStats<PetrifiedToad>
 public sealed class ToolboxStats : SimpleCounterStats<Toolbox>
 {
     public override string Format => "Offered cards {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Toolbox __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
@@ -1254,6 +1276,7 @@ public sealed class ToolboxStats : SimpleCounterStats<Toolbox>
 public sealed class DarkstonePeriaptStats : SimpleCounterStats<DarkstonePeriapt>
 {
     public override string Format => "Gained {0} max HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(DarkstonePeriapt __instance, CardModel card)
     {
         CardPile? pile = card.Pile;
@@ -1284,6 +1307,7 @@ public sealed class DarkstonePeriaptStats : SimpleCounterStats<DarkstonePeriapt>
 public sealed class GiryaStats : SimpleCounterStats<Girya>
 {
     public override string Format => "Gained {0} [gold]Strength[/gold].";
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(Girya __instance, AbstractRoom room)
     {
         if (__instance.TimesLifted <= 0) return;
@@ -1370,6 +1394,7 @@ public sealed class SneckoSkullStats : SimpleCounterStats<SneckoSkull>
 public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 {
     public override string Format => "Applied {0} [gold]Poison[/gold].";
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(TwistedFunnel __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -1475,6 +1500,7 @@ internal static class PendulumAfterPlayerTurnStartPatch
 public sealed class ChosenCheeseStats : SimpleCounterStats<ChosenCheese>
 {
     public override string Format => "Gained {0} max HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Postfix(ChosenCheese __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars["MaxHp"].IntValue);
@@ -1503,6 +1529,7 @@ public sealed class ChosenCheeseStats : SimpleCounterStats<ChosenCheese>
 public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
 {
     public override string Format => "Healed {0} HP from adding cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
 
     [ThreadStatic] private static int _prevCardsAdded;
@@ -1541,6 +1568,7 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
 public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
 {
     public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BagOfMarbles __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -1571,6 +1599,7 @@ public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
 public sealed class BellowsStats : SimpleCounterStats<Bellows>
 {
     public override string Format => "Upgraded {0} hands.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Bellows __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -1596,6 +1625,7 @@ public sealed class BellowsStats : SimpleCounterStats<Bellows>
 public sealed class BronzeScalesStats : SimpleCounterStats<BronzeScales>
 {
     public override string Format => "Applied {0} [gold]Thorns[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BronzeScales __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -1647,6 +1677,7 @@ public sealed class CrossbowStats : SimpleCounterStats<Crossbow>
 public sealed class DataDiskStats : SimpleCounterStats<DataDisk>
 {
     public override string Format => "Applied {0} [gold]Focus[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(DataDisk __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -1674,6 +1705,7 @@ public sealed class DataDiskStats : SimpleCounterStats<DataDisk>
 public sealed class EmberTeaStats : SimpleCounterStats<EmberTea>
 {
     public override string Format => "Applied {0} [gold]Strength[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     private static bool _willApply;
 
     public static void Prefix(EmberTea __instance, AbstractRoom room)
@@ -1708,6 +1740,7 @@ public sealed class EmberTeaStats : SimpleCounterStats<EmberTea>
 public sealed class FakeSneckoEyeStats : SimpleCounterStats<FakeSneckoEye>
 {
     public override string Format => "Applied [gold]Confused[/gold] {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FakeSneckoEye __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -1729,6 +1762,7 @@ public sealed class FakeSneckoEyeStats : SimpleCounterStats<FakeSneckoEye>
 public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
 {
     public override string Format => "Gained {0} [gold]Forge[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FencingManual __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -1757,6 +1791,7 @@ public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
 public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
 {
     public override string Format => "Generated {0} Soul cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FuneraryMask __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
@@ -1818,6 +1853,7 @@ public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
 public sealed class GoldPlatedCablesStats : SimpleCounterStats<GoldPlatedCables>
 {
     public override string Format => "Doubled first orb passive {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(GoldPlatedCables __instance, OrbModel orb, int __result, int triggerCount)
     {
         if (__result <= triggerCount) return;
@@ -1980,6 +2016,7 @@ public sealed class MusicBoxStats : SimpleCounterStats<MusicBox>
 public sealed class OddlySmoothStoneStats : SimpleCounterStats<OddlySmoothStone>
 {
     public override string Format => "Applied {0} [gold]Dexterity[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(OddlySmoothStone __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -2040,6 +2077,7 @@ public sealed class ReptileTrinketStats : SimpleCounterStats<ReptileTrinket>
 public sealed class RunicCapacitorStats : SimpleCounterStats<RunicCapacitor>
 {
     public override string Format => "Added {0} orb slots.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RunicCapacitor __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -2068,6 +2106,7 @@ public sealed class RunicCapacitorStats : SimpleCounterStats<RunicCapacitor>
 public sealed class SparklingRougeStats : SimpleCounterStats<SparklingRouge>
 {
     public override string Format => "Gained [gold]Strength[/gold]+[gold]Dexterity[/gold] {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SparklingRouge __instance, Creature creature)
     {
         if (creature != __instance.Owner.Creature) return;
@@ -2102,6 +2141,7 @@ public sealed class SparklingRougeStats : SimpleCounterStats<SparklingRouge>
 public sealed class StoneCrackerStats : SimpleCounterStats<StoneCracker>
 {
     public override string Format => "Upgraded {0} cards in boss combats.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(StoneCracker __instance, AbstractRoom room)
     {
         if (room.RoomType != RoomType.Boss) return;
@@ -2130,6 +2170,7 @@ public sealed class StoneCrackerStats : SimpleCounterStats<StoneCracker>
 public sealed class SwordOfJadeStats : SimpleCounterStats<SwordOfJade>
 {
     public override string Format => "Applied {0} [gold]Strength[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SwordOfJade __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -2157,6 +2198,7 @@ public sealed class SwordOfJadeStats : SimpleCounterStats<SwordOfJade>
 public sealed class SwordOfStoneStats : SimpleCounterStats<SwordOfStone>
 {
     public override string Format => "Defeated {0} elites.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SwordOfStone __instance, CombatRoom room)
     {
         if (room.RoomType != RoomType.Elite) return;
@@ -2184,6 +2226,7 @@ public sealed class SwordOfStoneStats : SimpleCounterStats<SwordOfStone>
 public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
 {
     public override string Format => "Channeled {0} [gold]Dark[/gold] orbs.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SymbioticVirus __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -2246,6 +2289,7 @@ public sealed class ToastyMittensStats : SimpleCounterStats<ToastyMittens>
 public sealed class WarHammerStats : SimpleCounterStats<WarHammer>
 {
     public override string Format => "Upgraded {0} cards after elite combats.";
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(WarHammer __instance, CombatRoom room)
     {
         if (room.RoomType != RoomType.Elite) return;
@@ -2276,6 +2320,7 @@ public sealed class WarHammerStats : SimpleCounterStats<WarHammer>
 public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryTicket>
 {
     public override string Format => "Completed {0} combats toward relic.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(WongosMysteryTicket __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -2300,6 +2345,7 @@ public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryT
 public sealed class BigHatStats : SimpleCounterStats<BigHat>
 {
     public override string Format => "Generated {0} [gold]Ethereal[/gold] cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BigHat __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -2328,6 +2374,7 @@ public sealed class BigHatStats : SimpleCounterStats<BigHat>
 public sealed class BingBongStats : SimpleCounterStats<BingBong>
 {
     public override string Format => "Duplicated {0} cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     private static readonly FieldInfo _cardsToSkipField =
         AccessTools.Field(typeof(BingBong), "_cardsToSkip");
     private static bool _willDuplicate;
@@ -2371,6 +2418,7 @@ public sealed class BingBongStats : SimpleCounterStats<BingBong>
 public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>
 {
     public override string Format => "Generated {0} free cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(VexingPuzzlebox __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -2396,6 +2444,7 @@ public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>
 public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
 {
     public override string Format => "Generated {0} cards to choose from.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(ChoicesParadox __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -2421,6 +2470,7 @@ public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
 public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
 {
     public override string Format => "Drew {0} free Powers.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(JeweledMask __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
@@ -2487,6 +2537,7 @@ public sealed class DiamondDiademStats : SimpleCounterStats<DiamondDiadem>
     public override string Format => GrantsBlock
         ? "Granted {0} [gold]Block[/gold]."
         : "Applied [gold]DiamondDiademPower[/gold] {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -2553,6 +2604,7 @@ internal static class DiamondDiademBeforeSideTurnEndPatch
 public sealed class BeltBuckleStats : SimpleCounterStats<BeltBuckle>
 {
     public override string Format => "Granted {0} [gold]Dexterity[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BeltBuckle __instance)
     {
         if (__instance.Owner.Potions.Any()) return;
@@ -2584,6 +2636,7 @@ public sealed class FishingRodStats : SimpleCounterStats<FishingRod>
 {
     [System.ThreadStatic] private static bool _willUpgrade;
     public override string Format => "Upgraded {0} cards.";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(FishingRod __instance, CombatRoom room)
     {
@@ -2620,6 +2673,7 @@ public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
 {
     [System.ThreadStatic] private static int _before;
     public override string Format => "Used {0} free travels.";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(WingedBoots __instance) => _before = __instance.TimesUsed;
 

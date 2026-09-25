@@ -259,6 +259,7 @@ public sealed class PumpkinCandleStats : SimpleCounterStats<PumpkinCandle>
 public sealed class LanternStats : SimpleCounterStats<Lantern>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Lantern __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -680,6 +681,7 @@ public sealed class BreadStats : IRelicStats
 public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Chandelier __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -716,6 +718,7 @@ public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
 public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Candelabra __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -751,6 +754,7 @@ public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
 public sealed class VeryHotCocoaStats : SimpleCounterStats<VeryHotCocoa>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(VeryHotCocoa __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -780,6 +784,7 @@ public sealed class VeryHotCocoaStats : SimpleCounterStats<VeryHotCocoa>
 public sealed class FakeVenerableTeaSetStats : SimpleCounterStats<FakeVenerableTeaSet>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(FakeVenerableTeaSet __instance, Player player, out bool __state) =>
         __state = __instance.Owner == player && __instance.GainEnergyInNextCombat;
@@ -819,6 +824,7 @@ public sealed class FakeVenerableTeaSetStats : SimpleCounterStats<FakeVenerableT
 public sealed class VenerableTeaSetStats : SimpleCounterStats<VenerableTeaSet>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(VenerableTeaSet __instance, Player player, out bool __state) =>
         __state = __instance.Owner == player && __instance.GainEnergyInNextCombat;

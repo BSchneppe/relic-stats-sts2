@@ -23,6 +23,7 @@ namespace RelicStats.Relics;
 public sealed class BurningBloodStats : SimpleCounterStats<BurningBlood>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(BurningBlood __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -58,6 +59,7 @@ public sealed class BurningBloodStats : SimpleCounterStats<BurningBlood>
 public sealed class BlackBloodStats : SimpleCounterStats<BlackBlood>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(BlackBlood __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -210,6 +212,7 @@ public sealed class DemonTongueStats : SimpleCounterStats<DemonTongue>
 public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(EternalFeather __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -261,6 +264,7 @@ public sealed class EternalFeatherStats : SimpleCounterStats<EternalFeather>
 public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(MealTicket __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -297,6 +301,7 @@ public sealed class MealTicketStats : SimpleCounterStats<MealTicket>
 public sealed class PantographStats : SimpleCounterStats<Pantograph>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
 
     // The heal is awaited inside BeforeCombatStart, so a Postfix can't observe the HP change
@@ -335,6 +340,7 @@ public sealed class PantographStats : SimpleCounterStats<Pantograph>
 public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(MeatOnTheBone __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -372,6 +378,7 @@ public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
 public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
 {
     public override string Format => "Healed {0} extra HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(RegalPillow __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -408,6 +415,7 @@ public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
 public sealed class LizardTailStats : SimpleCounterStats<LizardTail>
 {
     public override string Format => "Healed {0} HP on revive.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(LizardTail __instance, Creature creature, out int __state) =>
         __state = creature.CurrentHp;
@@ -510,6 +518,7 @@ public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
 public sealed class PlanisphereStats : SimpleCounterStats<Planisphere>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(Planisphere __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -547,6 +556,7 @@ public sealed class PlanisphereStats : SimpleCounterStats<Planisphere>
 public sealed class DragonFruitStats : SimpleCounterStats<DragonFruit>
 {
     public override string Format => "Gained {0} [green]Max HP[/green].";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Postfix(DragonFruit __instance, Player player)
     {
@@ -576,6 +586,7 @@ public sealed class DragonFruitStats : SimpleCounterStats<DragonFruit>
 public sealed class StoneHumidifierStats : SimpleCounterStats<StoneHumidifier>
 {
     public override string Format => "Gained {0} [green]Max HP[/green].";
+    public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Postfix(StoneHumidifier __instance, Player player)
     {

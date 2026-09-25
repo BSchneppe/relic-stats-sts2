@@ -25,6 +25,7 @@ namespace RelicStats.Relics;
 public sealed class AnchorStats : SimpleCounterStats<Anchor>
 {
     public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Anchor __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
 
@@ -49,6 +50,7 @@ public sealed class AnchorStats : SimpleCounterStats<Anchor>
 public sealed class FakeAnchorStats : SimpleCounterStats<FakeAnchor>
 {
     public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FakeAnchor __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
 
@@ -233,6 +235,7 @@ public sealed class BoneFluteStats : SimpleCounterStats<BoneFlute>
 public sealed class HornCleatStats : SimpleCounterStats<HornCleat>
 {
     public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(HornCleat __instance, Creature creature)
     {
         if (__instance.Owner.PlayerCombatState!.TurnNumber != 2) return;
@@ -372,6 +375,7 @@ public sealed class ToughBandagesStats : SimpleCounterStats<ToughBandages>
 public sealed class GorgetStats : SimpleCounterStats<Gorget>
 {
     public override string Format => "Gained {0} [gold]Plating[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Gorget __instance, AbstractRoom room)
     {
         if (room is not CombatRoom) return;
@@ -474,6 +478,7 @@ public sealed class TheAbacusStats : SimpleCounterStats<TheAbacus>
 public sealed class CaptainsWheelStats : SimpleCounterStats<CaptainsWheel>
 {
     public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(CaptainsWheel __instance, Creature creature)
     {
         if (__instance.Owner.PlayerCombatState!.TurnNumber != 3) return;
@@ -662,6 +667,7 @@ public sealed class VambraceStats : SimpleCounterStats<Vambrace>
         AccessTools.Field(typeof(Vambrace), "_blockGainedThisCombat");
 
     public override string Format => "Doubled first [gold]Block[/gold] {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(Vambrace __instance, out bool __state) =>
         __state = (bool)UsedField.GetValue(__instance)!;
@@ -714,6 +720,7 @@ public sealed class PermafrostStats : SimpleCounterStats<Permafrost>
         AccessTools.Field(typeof(Permafrost), "_activatedThisCombat");
 
     public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(Permafrost __instance, out bool __state) =>
         __state = (bool)ActivatedField.GetValue(__instance)!;

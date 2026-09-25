@@ -30,6 +30,7 @@ namespace RelicStats.Relics;
 public sealed class BagOfPreparationStats : SimpleCounterStats<BagOfPreparation>
 {
     public override string Format => "Drew {0} additional cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BagOfPreparation __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -58,6 +59,7 @@ public sealed class BagOfPreparationStats : SimpleCounterStats<BagOfPreparation>
 public sealed class BigMushroomStats : SimpleCounterStats<BigMushroom>
 {
     public override string Format => "Drew {0} fewer cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BigMushroom __instance, Player player, decimal __result, decimal __1)
     {
         if (__result >= __1) return;
@@ -86,6 +88,7 @@ public sealed class BigMushroomStats : SimpleCounterStats<BigMushroom>
 public sealed class BoomingConchStats : SimpleCounterStats<BoomingConch>
 {
     public override string Format => "Drew {0} additional cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BoomingConch __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -176,6 +179,7 @@ public sealed class PaelsBloodStats : SimpleCounterStats<PaelsBlood>
 public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 {
     public override string Format => "Drew {0} additional cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RingOfTheDrake __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -204,6 +208,7 @@ public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 public sealed class RingOfTheSnakeStats : SimpleCounterStats<RingOfTheSnake>
 {
     public override string Format => "Drew {0} additional cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RingOfTheSnake __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -234,6 +239,7 @@ public sealed class RingOfTheSnakeStats : SimpleCounterStats<RingOfTheSnake>
 public sealed class RingingTriangleStats : SimpleCounterStats<RingingTriangle>
 {
     public override string Format => "Retained hand {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RingingTriangle __instance, Player player, bool __result)
     {
         // ShouldFlush returns false when retaining
@@ -291,6 +297,7 @@ public sealed class RunicPyramidStats : SimpleCounterStats<RunicPyramid>
 public sealed class OrangeDoughStats : SimpleCounterStats<OrangeDough>
 {
     public override string Format => "Added {0} colorless cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(OrangeDough __instance, CombatSide side, ICombatState combatState)
     {
         if (side != __instance.Owner.Creature.Side) return;
@@ -320,6 +327,7 @@ public sealed class OrangeDoughStats : SimpleCounterStats<OrangeDough>
 public sealed class RadiantPearlStats : SimpleCounterStats<RadiantPearl>
 {
     public override string Format => "Generated {0} Luminesce cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RadiantPearl __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
@@ -349,6 +357,7 @@ public sealed class RadiantPearlStats : SimpleCounterStats<RadiantPearl>
 public sealed class NinjaScrollStats : SimpleCounterStats<NinjaScroll>
 {
     public override string Format => "Created {0} Shivs.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(NinjaScroll __instance, Player player, ICombatState combatState)
     {
         if (player != __instance.Owner) return;
@@ -381,6 +390,7 @@ public sealed class NinjaScrollStats : SimpleCounterStats<NinjaScroll>
 public sealed class CentennialPuzzleStats : SimpleCounterStats<CentennialPuzzle>
 {
     public override string Format => "Drew {0} cards on hit.";
+    public override StatCadence Cadence => StatCadence.Total;
 
     [ThreadStatic] private static bool _wasUsed;
 
@@ -867,6 +877,7 @@ public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
 public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarring>
 {
     public override string Format => "Triggered {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(WhisperingEarring __instance, Player player)
     {
         if (player != __instance.Owner) return;
@@ -899,6 +910,7 @@ public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarrin
 public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
 {
     public override string Format => "Added {0} extra Power cards to rewards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(LastingCandy __instance, Player player, bool __result)
     {
         if (!__result) return;
@@ -926,6 +938,7 @@ public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
 public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
 {
     public override string Format => "Upgraded card rewards {0} times.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SilverCrucible __instance, Player player, bool __result)
     {
         if (!__result) return;
@@ -955,6 +968,7 @@ public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
 public sealed class SilkenTressStats : SimpleCounterStats<SilkenTress>
 {
     public override string Format => "Enchanted {0} card rewards with [gold]Glam[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SilkenTress __instance, Player player, List<CardCreationResult> cardRewards, bool __result)
     {
         if (!__result) return;
@@ -981,6 +995,7 @@ public sealed class SilkenTressStats : SimpleCounterStats<SilkenTress>
 public sealed class HeftyTabletStats : SimpleCounterStats<HeftyTablet>
 {
     public override string Format => "Offered {0} rare cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(HeftyTablet __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
 
@@ -1000,6 +1015,7 @@ public sealed class HeftyTabletStats : SimpleCounterStats<HeftyTablet>
 public sealed class NeowsTalismanStats : SimpleCounterStats<NeowsTalisman>
 {
     public override string Format => "Upgraded {0} starter cards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(NeowsTalisman __instance)
     {
         var basics = PileType.Deck.GetPile(__instance.Owner).Cards
@@ -1027,6 +1043,7 @@ public sealed class NeowsTalismanStats : SimpleCounterStats<NeowsTalisman>
 public sealed class KaleidoscopeStats : SimpleCounterStats<Kaleidoscope>
 {
     public override string Format => "Offered {0} cross-character card rewards.";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Kaleidoscope __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
 
