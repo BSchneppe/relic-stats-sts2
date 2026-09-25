@@ -12,11 +12,19 @@ using MegaCrit.Sts2.Core.DevConsole.ConsoleCommands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
+using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.Models.Relics;
+using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
+using MegaCrit.Sts2.Core.Rewards;
+using MegaCrit.Sts2.Core.Rooms;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace RelicStats.Core.Testing;
 
@@ -73,6 +81,24 @@ public static class TestHelpers
         Player.RemoveRelicInternal(relic, silent: true);
     }
 
+    /// <summary>
+    /// Gives the relic the way the game does on pickup, so its AfterObtained runs. <see cref="AddRelic"/>
+    /// uses the silent internal add and never fires it, which is right for most tests but makes every
+    /// on-pickup relic (Hefty Tablet, Neow's Bones, Pumpkin Candle's kindle…) untestable.
+    /// </summary>
+    public static void ObtainRelic(string relicId)
+    {
+        if (Player == null) { MainFile.Logger.Warn($"[ObtainRelic] '{relicId}' skipped: no player"); return; }
+        var id = relicId.ToUpperInvariant();
+        var relicModel = ModelDb.AllRelics.FirstOrDefault(r => r.Id.Entry == id);
+        if (relicModel == null) { MainFile.Logger.Warn($"[ObtainRelic] '{id}' not found in ModelDb"); return; }
+        TaskHelper.RunSafely(RelicCmd.Obtain(relicModel.ToMutable(), Player));
+        MainFile.Logger.Info($"[ObtainRelic] {id} obtained, present={Player.Relics.Any(r => r.Id.Entry == id)}");
+    }
+
+    /// <summary>The player's live instance of a relic, for reading its public counters (TimesLifted, CombatsSeen…).</summary>
+    public static T? GetRelic<T>() where T : RelicModel => Player?.GetRelic<T>();
+
     public static void StartFight(string encounterId = "NIBBITS_WEAK")
     {
         _fightCmd.Value.Process(Player, new[] { encounterId });
@@ -122,6 +148,22 @@ public static class TestHelpers
     public static void AddGold(int amount)
     {
         _goldCmd.Value.Process(Player, new[] { amount.ToString() });
+    }
+
+    /// <summary>Sets the player's gold to an exact amount (AddGold only adds).</summary>
+    public static void SetGold(int amount)
+    {
+        if (Player == null) return;
+        TaskHelper.RunSafely(PlayerCmd.SetGold(amount, Player));
+    }
+
+    /// <summary>
+    /// Sets the player's current HP directly, without the heal/damage pipeline. Use it to put the
+    /// player under a heal relic's threshold (Meat on the Bone, Regal Pillow) before the trigger.
+    /// </summary>
+    public static void SetPlayerHp(int hp)
+    {
+        Player?.Creature.SetCurrentHpInternal(hp);
     }
 
     public static void Heal(int amount)
@@ -666,19 +708,21 @@ public static class TestHelpers
 
     // --- Card to permanent deck ---
 
-    public static void AddCardToDeck(string cardId)
-    {
-        _cardCmd.Value.Process(Player, new[] { cardId, "Deck" });
-    }
+    /// <summary>
+    /// Adds a card to the permanent deck through the game's card pipeline, so the deck-add hooks fire
+    /// (TryModifyCardBeingAddedToDeck synchronously, AfterCardChangedPiles after a tween: WaitFor
+    /// <see cref="GameEvent.CardChangedPiles"/>). The card console command needs an EXACT id
+    /// (STRIKE_IRONCLAD, DEFEND_IRONCLAD, DEMON_FORM, CLUMSY…); unlike <see cref="SpawnCard"/> there
+    /// is no fuzzy match, and a bad id used to fail silently and leave the test asserting on nothing.
+    /// Do this while a combat room exists: the add tween is owned by the combat room node.
+    /// </summary>
+    public static void AddCardToDeck(string cardId) => RunCmd(_cardCmd.Value, cardId, "Deck");
 
     /// <summary>
-    /// Adds a card to a combat pile via the card console command.
+    /// Adds a card to a combat pile via the card console command (exact id, see <see cref="AddCardToDeck"/>).
     /// Unlike SpawnCard, this goes through CardPileCmd.Add which fires AfterCardEnteredCombat.
     /// </summary>
-    public static void AddCardToCombatPile(string cardId, string pile = "Hand")
-    {
-        _cardCmd.Value.Process(Player, new[] { cardId, pile });
-    }
+    public static void AddCardToCombatPile(string cardId, string pile = "Hand") => RunCmd(_cardCmd.Value, cardId, pile);
 
     // --- Events & Ancients ---
 
@@ -703,6 +747,133 @@ public static class TestHelpers
         // Block console command: block <amount> <targetIndex>
         // Enemy is at creature index 1
         _blockCmd.Value.Process(Player, new[] { amount.ToString(), "1" });
+    }
+
+    // --- Rewards ---
+
+    /// <summary>
+    /// Generates a combat card reward (3 options) exactly as the room-end reward flow does, with no
+    /// screen: fires TryModifyCardRewardOptions / Late and AfterModifyingCardRewardOptions
+    /// synchronously. Returns the reward so a test can also exercise its alternatives.
+    /// </summary>
+    public static CardReward GenerateCardReward(RoomType roomType = RoomType.Monster)
+    {
+        var options = CardCreationOptions.ForRoom(Player!, roomType)
+            .WithFlags(CardCreationFlags.IsFromCombat | CardCreationFlags.IsCardReward);
+        var reward = new CardReward(options, 3, Player!);
+        reward.Populate();
+        MainFile.Logger.Info($"[GenerateCardReward] {roomType}: {reward.Cards.Count()} options");
+        return reward;
+    }
+
+    /// <summary>
+    /// Picks the SACRIFICE alternative (Pael's Wing) on a freshly generated card reward.
+    /// </summary>
+    public static void SacrificeCardReward()
+    {
+        var reward = GenerateCardReward();
+        var alt = CardRewardAlternative.Generate(reward).FirstOrDefault(a => a.OptionId == "SACRIFICE");
+        if (alt == null) { MainFile.Logger.Warn("[SacrificeCardReward] no SACRIFICE alternative offered"); return; }
+        TaskHelper.RunSafely(alt.OnSelect());
+    }
+
+    // --- Card selection prompts ---
+
+    private static IDisposable? _selectorScope;
+
+    /// <summary>
+    /// Answers every card-selection prompt automatically (first N options) until
+    /// <see cref="PopCardSelector"/>. Needed for relics whose effect waits on a choose-a-card screen
+    /// (Gambling Chip's discard, Hefty Tablet's pick). Push it BEFORE the prompt opens.
+    /// </summary>
+    public static void PushAutoCardSelector()
+    {
+        PopCardSelector();
+        _selectorScope = CardSelectCmd.PushSelector(new VakuuCardSelector());
+    }
+
+    public static void PopCardSelector()
+    {
+        _selectorScope?.Dispose();
+        _selectorScope = null;
+    }
+
+    /// <summary>Closes any overlay screen a relic left open (reward screens from Kaleidoscope / Neow's Bones).</summary>
+    public static void CloseOverlays()
+    {
+        try { NOverlayStack.Instance?.Clear(); }
+        catch (Exception e) { MainFile.Logger.Warn($"[CloseOverlays] {e.Message}"); }
+    }
+
+    // --- Rest site ---
+
+    /// <summary>
+    /// Performs the rest-site Rest (heal) action: ModifyRestSiteHealAmount, the heal, then
+    /// AfterRestSiteHeal. Entering the rest site alone only offers the options.
+    /// </summary>
+    public static void RestAtSite()
+    {
+        if (Player == null) return;
+        TaskHelper.RunSafely(HealRestSiteOption.ExecuteRestSiteHeal(Player, isMimicked: false));
+    }
+
+    /// <summary>Selects a rest-site option by id ("LIFT", "DIG", "HEAL", …) in the current rest-site room.</summary>
+    public static void SelectRestSiteOption(string optionId)
+    {
+        if (Player?.RunState.CurrentRoom is not RestSiteRoom room)
+        {
+            MainFile.Logger.Warn($"[SelectRestSiteOption] not in a rest site (room={Player?.RunState.CurrentRoom?.GetType().Name})");
+            return;
+        }
+        var option = room.Options.FirstOrDefault(o => o.OptionId == optionId);
+        if (option == null)
+        {
+            MainFile.Logger.Warn($"[SelectRestSiteOption] '{optionId}' not offered (have: {string.Join(",", room.Options.Select(o => o.OptionId))})");
+            return;
+        }
+        TaskHelper.RunSafely(option.OnSelect());
+    }
+
+    // --- Death ---
+
+    /// <summary>Kills every enemy through the Doom path, which fires AfterDiedToDoom (Book Repair Knife).</summary>
+    public static void DoomKillEnemies()
+    {
+        var enemies = Player?.Creature.CombatState?.HittableEnemies.ToList();
+        if (enemies == null || enemies.Count == 0) return;
+        TaskHelper.RunSafely(DoomPower.DoomKill(enemies));
+    }
+
+    // --- Map ---
+
+    public static MapPoint? CurrentMapPoint => Player?.RunState.CurrentMapPoint;
+
+    /// <summary>
+    /// Sets the current map point's type (e.g. Unknown for Planisphere). Returns the previous value
+    /// so Cleanup can restore it, or null when there is no current point.
+    /// </summary>
+    public static MapPointType? SetCurrentMapPointType(MapPointType type)
+    {
+        var point = CurrentMapPoint;
+        if (point == null) { MainFile.Logger.Warn("[SetCurrentMapPointType] no current map point"); return null; }
+        var previous = point.PointType;
+        point.PointType = type;
+        return previous;
+    }
+
+    /// <summary>
+    /// The first map point in the given row, or null past the map's end.
+    /// </summary>
+    public static MapPoint? MapPointInRow(int row) => Player?.RunState.Map.GetPointsInRow(row).FirstOrDefault();
+
+    /// <summary>
+    /// Travels to a map point the way the debug map does: records the coord as visited and enters
+    /// the room, so map-travel relics (Winged Boots) see a real move. A point that is not a child of
+    /// the current one counts as a non-adjacent jump.
+    /// </summary>
+    public static void TravelTo(MapPoint point, RoomType roomType)
+    {
+        TaskHelper.RunSafely(RunManager.Instance.EnterMapCoordDebug(point.coord, roomType, showTransition: false));
     }
 }
 #endif
