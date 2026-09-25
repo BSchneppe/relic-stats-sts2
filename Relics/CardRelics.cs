@@ -4,8 +4,10 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Combat.History.Entries;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -254,10 +256,22 @@ public sealed class RingingTriangleStats : SimpleCounterStats<RingingTriangle>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("spawn cards and end turn", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.SpawnCard("DEFEND"); TestHelpers.EndTurn(); });
+        runner.Do("spawn cards and end turn 1", () =>
+        {
+            TestHelpers.EnableGodMode();
+            TestHelpers.ProtectEnemy();
+            TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.SpawnCard("DEFEND");
+            TestHelpers.EndTurn();
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked retention", () =>
-            new TestResult(Amount >= 1, $"expected >= 1, got {Amount}"));
+        runner.Assert("retained the turn-1 hand once", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        // ShouldFlush only returns false on turn 1; the turn-2 flush must not count.
+        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no retention from turn 2 on", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -281,10 +295,23 @@ public sealed class RunicPyramidStats : SimpleCounterStats<RunicPyramid>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("spawn cards and end turn", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.SpawnCard("DEFEND"); TestHelpers.EndTurn(); });
+        runner.Assert("nothing retained before the first flush", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("spawn cards and end turn 1", () =>
+        {
+            TestHelpers.EnableGodMode();
+            TestHelpers.ProtectEnemy();
+            TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.SpawnCard("DEFEND");
+            TestHelpers.EndTurn();
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked retention", () =>
-            new TestResult(Amount >= 1, $"expected >= 1, got {Amount}"));
+        runner.Assert("retained once after turn 1", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("retained again after turn 2", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -317,6 +344,17 @@ public sealed class OrangeDoughStats : SimpleCounterStats<OrangeDough>
             var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
+        // AfterSideTurnStart for the player's turn 2 runs after AfterPlayerTurnStart, so wait for
+        // both: the enemy's SideTurnStart arrives (and is ignored) while waiting for PlayerTurnStart.
+        runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.WaitFor(GameEvent.SideTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -347,6 +385,14 @@ public sealed class RadiantPearlStats : SimpleCounterStats<RadiantPearl>
             var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
+        runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -376,6 +422,14 @@ public sealed class NinjaScrollStats : SimpleCounterStats<NinjaScroll>
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars["Shivs"].IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on turn 2", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars["Shivs"].IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -422,6 +476,14 @@ public sealed class CentennialPuzzleStats : SimpleCounterStats<CentennialPuzzle>
             var expected = (int)(relic?.DynamicVars.Cards.BaseValue ?? -1);
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
+        // UsedThisCombat is set on the first unblocked hit; a second hit in the same combat is ignored.
+        runner.Do("end turn again to take a second hit", () => { TestHelpers.Heal(999); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no increment on a second hit", () => {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = (int)(relic?.DynamicVars.Cards.BaseValue ?? -1);
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -457,12 +519,20 @@ public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
             TestHelpers.PlayThenEndTurn(1, 0);
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked draw from empty hand", () =>
-            // UnceasingTop checks CombatManager.Instance.IsPlayPhase in the Postfix.
-            // When the hand empties during card-play resolution, IsPlayPhase may be false.
-            // Amount may be 0 if IsPlayPhase is false, but should never be negative.
-            new TestResult(Amount >= 0,
-                $"expected >= 0 (IsPlayPhase may be false during card-play resolution), got {Amount}"));
+        // Playing the only card empties the hand in the Play phase: CardModel.Play calls
+        // CheckForEmptyHand after the card leaves play, the phase is valid, so the relic draws once
+        // (the draw reshuffles the STRIKE back into hand). The end-of-turn flush never calls
+        // CheckForEmptyHand, and at turn 2 the hand draw reshuffles the STRIKE in again, so the
+        // auto-pre-play check sees a non-empty hand. Asserting at PlayerTurnStart (before that
+        // check) also keeps the count independent of the reshuffle.
+        runner.Assert("tracked one draw from the emptied hand", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        // Negative: a card kept in hand through turn 2 means neither the auto-pre-play check nor
+        // the flush empties the hand in a valid phase, so nothing is added by the end of turn 2.
+        runner.Do("keep a card in hand and end turn 2", () => { TestHelpers.SpawnCard("DEFEND"); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.TurnEnd, 15000);
+        runner.Assert("no draw while the hand stays populated", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -485,23 +555,63 @@ public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
         ActiveInstance = __instance;
     }
 
+    // The relic's AfterPlayerTurnStart awaits the discard prompt and only calls
+    // CardCmd.DiscardAndDraw when at least one card was picked. Clearing the flag solely in the
+    // DiscardAndDraw prefix therefore leaks it on a pick of 0 cards, and the next DiscardAndDraw from
+    // any source (a card, a potion) would be credited to the chip. A plain Postfix cannot clear it
+    // either: on an async method it runs when the method first yields, i.e. while the prompt is
+    // still open. Wrapping the returned Task instead ties the flag's lifetime exactly to the
+    // method's own: it is cleared when the relic's turn-start work completes, for 0 or N cards.
+    public static void Postfix(GamblingChip __instance, ref Task __result)
+    {
+        if (ActiveInstance != __instance) return;
+        __result = ClearWhenDone(__result);
+    }
+
+    private static async Task ClearWhenDone(Task inner)
+    {
+        try { await inner; }
+        finally { ActiveInstance = null; }
+    }
+
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("simulate swap of 3 cards", () =>
+        // The chip prompts at turn-1 start, so the hand must already hold cards then. The deck is
+        // cleared before every test, so Ninja Scroll (BeforeHandDraw, which runs before
+        // AfterPlayerTurnStart in SetupPlayerTurn) supplies 3 Shivs; the auto selector picks all of
+        // them and the chip calls DiscardAndDraw with that count.
+        runner.Do("add relics and auto-answer the prompt", () =>
         {
-            // GamblingChip's AfterPlayerTurnStart is async (needs player UI input).
-            // Simulate the tracking path: set the flag and invoke the DiscardAndDraw patch directly.
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId) as GamblingChip;
-            ActiveInstance = relic;
-            GamblingChipDiscardAndDrawPatch.Prefix(3);
+            TestHelpers.AddRelic("NINJA_SCROLL");
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.PushAutoCardSelector();
         });
-        runner.Assert("tracked 3 swapped cards", () =>
-            new TestResult(Amount == 3, $"expected 3, got {Amount}"));
-        runner.Cleanup(() => { ActiveInstance = null; TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.CardDiscarded, 15000);
+        runner.Assert("tracked the swapped Shivs", () =>
+        {
+            var scroll = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == "NINJA_SCROLL");
+            var expected = scroll?.DynamicVars["Shivs"].IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        // The chip only prompts on turn 1; turn 2 must not add anything.
+        runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no swap on turn 2", () =>
+        {
+            var scroll = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == "NINJA_SCROLL");
+            var expected = scroll?.DynamicVars["Shivs"].IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        });
+        runner.Cleanup(() =>
+        {
+            TestHelpers.PopCardSelector();
+            ActiveInstance = null;
+            TestHelpers.RemoveRelic("NINJA_SCROLL");
+            TestHelpers.RemoveRelic(RelicId);
+            Reset();
+        });
     }
 #endif
 }
@@ -538,17 +648,32 @@ public sealed class BookmarkStats : SimpleCounterStats<Bookmark>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // AfterFlush fires when the hand is flushed at turn end, with the retained cards.
-        // It only acts when a retained card has a fixed cost > 0. STRIKE and DEFEND lack
-        // Retain, so nothing is retained and the relic's condition is never met.
+        // AfterFlush receives the retained cards; the relic acts only when one of them has a fixed
+        // cost > 0. Without Retain the STRIKE is flushed (negative); with Runic Pyramid, ShouldFlush
+        // is false so the whole hand is retained and the cost-1 STRIKE qualifies.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("spawn cards and end turn", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.SpawnCard("DEFEND"); TestHelpers.EndTurn(); });
+        runner.Do("spawn a card and end turn without Retain", () =>
+        {
+            TestHelpers.EnableGodMode();
+            TestHelpers.ProtectEnemy();
+            TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.EndTurn();
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("no retained cards (STRIKE/DEFEND lack Retain)", () =>
-            new TestResult(Amount >= 0, $"expected >= 0 (STRIKE/DEFEND lack Retain), got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Assert("nothing retained, nothing reduced", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("add Runic Pyramid, spawn a card and end turn", () =>
+        {
+            TestHelpers.AddRelic("RUNIC_PYRAMID");
+            TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.EndTurn();
+        });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("reduced a retained card once", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic("RUNIC_PYRAMID"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -569,17 +694,32 @@ public sealed class PocketwatchStats : SimpleCounterStats<Pocketwatch>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        int snapshot = 0;
+        // ModifyHandDraw adds Cards when at most CardThreshold cards were played last turn, never on
+        // turn 1. Turn 1 plays nothing -> turn 2 gets the bonus; turn 2 plays 4 (> 3) -> turn 3 does not.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("end turn without playing cards", () => TestHelpers.EndTurn());
+        runner.Assert("no bonus on turn 1", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("end turn 1 without playing cards", () => TestHelpers.EndTurn());
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Do("snapshot and end turn again", () => { snapshot = Amount; TestHelpers.EndTurn(); });
+        runner.Assert("bonus after a quiet turn", () => {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("play 4 cards on turn 2 and end it", () => {
+            TestHelpers.EnableGodMode();
+            TestHelpers.ProtectEnemy();
+            TestHelpers.AddEnergy(10);
+            for (int i = 0; i < 4; i++) TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.PlayThenEndTurn(4, 0);
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked extra draw", () => {
-            var delta = Amount - snapshot;
-            return new TestResult(delta == 3, $"expected delta 3, got {delta}");
+        runner.Assert("no bonus after exceeding the threshold", () => {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -600,14 +740,26 @@ public sealed class PollinousCoreStats : SimpleCounterStats<PollinousCore>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // ModifyHandDraw adds extra draw based on channeled orbs.
-        // On Ironclad (no orbs), the condition is never met so the Postfix never increments.
+        // Not orb-based: BeforeHandDraw does TurnsSeen++ (turn N -> N), ModifyHandDraw adds Cards once
+        // TurnsSeen >= Turns (4), and AfterModifyingHandDraw resets it. So turn 3's draw sees 3 (no
+        // bonus) and turn 4's draw sees 4 (bonus). Both are visible at that turn's PlayerTurnStart.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("needs orb channeling (Defect character)", () =>
-            // PollinousCore needs channeled orbs (Defect character). On Ironclad, Amount stays 0.
-            new TestResult(Amount >= 0, $"expected >= 0 (needs Defect character for orbs), got {Amount}"));
+        runner.Do("end turn 1", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("no bonus before the Nth turn", () =>
+            new TestResult(Amount == 0, $"expected 0 at turn 3, got {Amount}"));
+        runner.Do("end turn 3", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("bonus draw on the Nth turn", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected} at turn 4, got {Amount}");
+        });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -682,19 +834,27 @@ public sealed class SneckoEyeStats : IRelicStats
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("play card", () => {
+        // ModifyHandDraw adds Cards every turn (turns 1 and 2 -> 2 x Cards). The deck is empty, so
+        // 7 STRIKEs seeded into the draw pile are exactly what turn 2's 5 + 2 hand draw pulls;
+        // Confused re-rolls each drawn card's cost, so the cost tiers add up to 7.
+        const int seeded = 7;
+        runner.Do("seed the draw pile and end turn 1", () => {
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
-            TestHelpers.AddEnergy(10);
-            TestHelpers.SpawnCard("STRIKE");
-            TestHelpers.PlayThenEndTurn(1, 0);
+            for (int i = 0; i < seeded; i++) TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.EndTurn();
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked stat", () =>
+        runner.Assert("tracked extra draws for two turns", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(CardsDrawn >= expected && expected > 0, $"expected >= {expected}, got {CardsDrawn}");
+            var expected = 2 * (relic?.DynamicVars.Cards.IntValue ?? -1);
+            return new TestResult(expected > 0 && CardsDrawn == expected, $"expected {expected}, got {CardsDrawn}");
+        });
+        runner.Assert("tracked a cost tier for every drawn card", () =>
+        {
+            var tiers = Cost0 + Cost1 + Cost2 + Cost3;
+            return new TestResult(tiers == seeded, $"expected {seeded} tiered cards, got {tiers} ({Cost0}/{Cost1}/{Cost2}/{Cost3})");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -772,16 +932,29 @@ public sealed class IronClubStats : SimpleCounterStats<IronClub>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("play 4 cards", () => {
+        // Draws once every Cards (4) plays: nothing after 3, one after the 4th, nothing on the 5th.
+        runner.Do("spawn 5 cards and play the first", () => {
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
             TestHelpers.AddEnergy(10);
-            for (int i = 0; i < 4; i++) TestHelpers.SpawnCard("STRIKE");
-            TestHelpers.PlayThenEndTurn(4, 0);
+            for (int i = 0; i < 5; i++) TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.PlayCard(0, 0);
         });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked draw after 4 plays", () =>
-            new TestResult(Amount >= 1, $"expected >= 1, got {Amount}"));
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Do("play card 2", () => TestHelpers.PlayCard(0, 0));
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Do("play card 3", () => TestHelpers.PlayCard(0, 0));
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Assert("no draw after 3 plays", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("play card 4", () => TestHelpers.PlayCard(0, 0));
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Assert("tracked the draw on the 4th play", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Do("play card 5", () => TestHelpers.PlayCard(0, 0));
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Assert("no draw on the 5th play", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -794,18 +967,29 @@ public sealed class IronClubStats : SimpleCounterStats<IronClub>
 public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
 {
     public override string Format => "Drew {0} cards.";
+
+    [ThreadStatic] private static int _exhaustedBefore;
+
+    public static void Prefix(JossPaper __instance)
+    {
+        _exhaustedBefore = __instance.CardsExhausted;
+    }
+
     public static void Postfix(JossPaper __instance, CardModel card, bool causedByEthereal)
     {
         if (card.Owner != __instance.Owner) return;
         if (causedByEthereal) return;
-        // CardsExhausted was already incremented synchronously before the async draw.
-        // A draw triggers when CardsExhausted reaches the threshold (5).
+        // The game does CardsExhausted++, then DrawIfThresholdMet awaits CardPileCmd.Draw and only
+        // afterwards does CardsExhausted %= ExhaustAmount. When there is nothing to draw, the Draw
+        // completes synchronously, so by the time this Postfix runs the counter has already wrapped
+        // to 0 and reading it here undercounts. Replay the game's arithmetic on the value captured
+        // before the increment instead. The draw count is CardsExhausted / ExhaustAmount, exactly as
+        // DrawIfThresholdMet computes it (CardsVar(1) is display-only).
         int threshold = __instance.DynamicVars["ExhaustAmount"].IntValue;
-        if (__instance.CardsExhausted >= threshold)
-        {
-            int drawn = __instance.CardsExhausted / threshold;
-            Track(__instance, s => s.Amount += drawn);
-        }
+        int after = _exhaustedBefore + 1;
+        if (after < threshold) return;
+        int drawn = after / threshold;
+        Track(__instance, s => s.Amount += drawn);
     }
 
 #if DEBUG
@@ -814,17 +998,23 @@ public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        for (int i = 0; i < 5; i++)
+        // Seed the draw pile so the 5th exhaust's draw actually has something to draw.
+        runner.Do("seed the draw pile", () =>
+        {
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+        });
+        for (int i = 0; i < 4; i++)
         {
             runner.Do($"exhaust card {i + 1}", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.ExhaustCard(); });
             runner.WaitFor(GameEvent.CardExhausted);
         }
-        runner.Assert("tracked draw after 5 exhausts", () =>
-            // JossPaper checks __instance.CardsExhausted >= threshold in the Postfix.
-            // The relic's CardsExhausted counter may or may not be properly wired for dynamic relics.
-            // Amount should be >= 0 regardless.
-            new TestResult(Amount >= 0,
-                $"expected >= 0 (CardsExhausted counter may not increment for dynamic relic), got {Amount}"));
+        runner.Assert("no draw after 4 exhausts", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("exhaust card 5", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.ExhaustCard(); });
+        runner.WaitFor(GameEvent.CardExhausted);
+        runner.Assert("tracked one draw on the 5th exhaust", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -841,6 +1031,13 @@ public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
     {
         if (player != __instance.Owner) return;
         if (player.PlayerCombatState!.TurnNumber == 1) return;
+        // The relic only replays when its history lookup finds a non-dupe Attack the owner played
+        // last turn; a turn with nothing to replay must not count. Same expression as the game's.
+        var owner = __instance.Owner;
+        bool replayed = CombatManager.Instance.History.CardPlaysFinished.Any(
+            (CardPlayFinishedEntry e) => e.CardPlay.Player == owner && e.HappenedLastPlayerTurn(owner)
+                && e.CardPlay.Card.Type == CardType.Attack && !e.CardPlay.Card.IsDupe);
+        if (!replayed) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -850,11 +1047,10 @@ public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        // HistoryCourse auto-replays a card from the *previous* player turn, gated on the game's
-        // CardPlaysFinished history (HappenedLastPlayerTurn). The test harness's synthetic turns
-        // don't reproduce that cross-turn bookkeeping, so the replay never fires here even though
-        // the tracking (AfterAutoPrePlayPhaseEntered, turn>1) is correct. Assert non-negative.
-        runner.Do("setup + play a card", () =>
+        // An Attack played on turn 1 is replayed as a dupe in turn 2's auto-pre-play phase; the
+        // dupe's own AfterCardPlayed is the sync point. The dupe is excluded from the lookup, so
+        // turn 3 (nothing played manually on turn 2) replays nothing.
+        runner.Do("play an attack on turn 1", () =>
         {
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
@@ -865,9 +1061,16 @@ public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
         runner.WaitFor(GameEvent.CardPlayed, 15000);
         runner.Do("end turn 1", () => TestHelpers.EndTurn());
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("registered; replays from cross-turn history", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (auto-replay needs real cross-turn history)"));
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.WaitFor(GameEvent.CardPlayed, 15000);
+        runner.Assert("tracked the turn-2 replay", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Do("end turn 2 without playing", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Do("end turn 3", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.TurnEnd, 15000);
+        runner.Assert("no replay when last turn had no manual attack", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -888,16 +1091,21 @@ public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarrin
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // BeforePlayPhaseStart fires AFTER PlayerTurnStart but BEFORE IsPlayPhase.
-        // The relic only triggers on turn 1 and only auto-plays cards that cost 0.
-        // With an empty deck (cleared by test harness), there are no cards to auto-play,
-        // so the relic's condition (RoundNumber == 1) is met but it has nothing to act on.
-        // Amount tracks triggers, not cards played, so it should still increment.
+        // AfterAutoPrePlayPhaseEnteredLate runs after PlayerTurnStart and before the Play phase, so
+        // TurnEnd is the first sync point past it. Amount counts triggers (turn 1 only), not cards
+        // played: with an empty hand it triggers and auto-plays nothing.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("BeforePlayPhaseStart has no test event hook; Amount reflects trigger count", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (BeforePlayPhaseStart fires between PlayerTurnStart and IsPlayPhase; no dedicated event hook)"));
+        runner.Do("end turn 1", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.TurnEnd, 15000);
+        runner.Assert("triggered once on turn 1", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.TurnEnd, 15000);
+        runner.Assert("no trigger on turn 2", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -920,14 +1128,26 @@ public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // TryModifyCardRewardOptions fires on the card reward screen after combat victory.
+        // The relic acts on combat card rewards only in "triggering" combats, i.e. when its public
+        // CombatRewardsSeen counter is odd (it is incremented by the rewards hook, which
+        // GenerateCardReward does not run, so the value we set is what the relic sees).
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("win combat", () => TestHelpers.WinCombat());
-        runner.WaitFor(GameEvent.CombatVictory);
-        runner.Assert("reward fires on victory screen (may not trigger every combat)", () =>
-            new TestResult(true, $"Amount={Amount} (fires only on reward screen for eligible combats)"));
+        runner.Do("generate a reward in a triggering combat", () =>
+        {
+            TestHelpers.GetRelic<LastingCandy>()!.CombatRewardsSeen = 1;
+            TestHelpers.GenerateCardReward();
+        });
+        runner.Assert("added a Power card once", () =>
+            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Do("generate a reward in a non-triggering combat", () =>
+        {
+            TestHelpers.GetRelic<LastingCandy>()!.CombatRewardsSeen = 2;
+            TestHelpers.GenerateCardReward();
+        });
+        runner.Assert("no card added on an even combat", () =>
+            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -948,14 +1168,28 @@ public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // TryModifyCardRewardOptionsLate fires on the card reward screen after combat victory.
+        // Upgrades every card reward while TimesUsed < Cards (3); AfterModifyingCardRewardOptions
+        // increments TimesUsed, so the 4th reward is left alone.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("win combat", () => TestHelpers.WinCombat());
-        runner.WaitFor(GameEvent.CombatVictory);
-        runner.Assert("reward fires on victory screen (may not trigger every combat)", () =>
-            new TestResult(true, $"Amount={Amount} (fires only on reward screen for eligible combats)"));
+        runner.Do("generate three card rewards", () =>
+        {
+            for (int i = 0; i < 3; i++) TestHelpers.GenerateCardReward();
+        });
+        runner.Assert("upgraded three rewards", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("generate a fourth card reward", () => TestHelpers.GenerateCardReward());
+        runner.Assert("no upgrade once used up", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -979,10 +1213,19 @@ public sealed class SilkenTressStats : SimpleCounterStats<SilkenTress>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // Only fires on a card-reward screen; not reproducible in the combat test harness.
+        // Amount counts the reward options offered on the one reward the relic enchants (the whole
+        // cardRewards list, 3 options); AfterModifyingCardRewardOptions then sets IsUsed, so a
+        // second reward is untouched.
+        int options = 0;
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Assert("registered; fires on card reward screen", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (enchants only on a card reward screen)"));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("generate a card reward", () => options = TestHelpers.GenerateCardReward().Cards.Count());
+        runner.Assert("counted the enchanted reward's options", () =>
+            new TestResult(options == 3 && Amount == options, $"expected {options} (3 options), got {Amount}"));
+        runner.Do("generate a second card reward", () => TestHelpers.GenerateCardReward());
+        runner.Assert("no second enchant once used", () =>
+            new TestResult(Amount == options, $"expected still {options}, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -1002,10 +1245,26 @@ public sealed class HeftyTabletStats : SimpleCounterStats<HeftyTablet>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Assert("registered; fires on pickup", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (AfterObtained opens a card choice on real pickup)"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        // AfterObtained only runs on a real pickup (RelicCmd.Obtain); the silent add never fires it.
+        // The pickup opens a choose-a-card screen, answered by the auto selector.
+        runner.Do("add relic silently", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("silent add offers nothing", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("pick the relic up for real", () =>
+        {
+            TestHelpers.RemoveRelic(RelicId);
+            TestHelpers.PushAutoCardSelector();
+            TestHelpers.ObtainRelic(RelicId);
+        });
+        runner.Assert("offered Cards rare cards on pickup", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.PopCardSelector(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1030,9 +1289,25 @@ public sealed class NeowsTalismanStats : SimpleCounterStats<NeowsTalisman>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Assert("registered; fires on pickup", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (AfterObtained fires on real pickup)"));
+        // AfterObtained upgrades the last Basic Strike and Defend in the deck. The deck is cleared
+        // before every test, so add one of each (AddCardToDeck needs a combat room) before the
+        // real pickup; the silent add never fires the hook.
+        runner.Do("add relic silently", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("silent add upgrades nothing", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("add a Strike to the deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
+        runner.WaitFor(GameEvent.CardChangedPiles);
+        runner.Do("add a Defend to the deck", () => TestHelpers.AddCardToDeck("DEFEND_IRONCLAD"));
+        runner.WaitFor(GameEvent.CardChangedPiles);
+        runner.Do("pick the relic up for real", () =>
+        {
+            TestHelpers.RemoveRelic(RelicId);
+            TestHelpers.ObtainRelic(RelicId);
+        });
+        runner.Assert("upgraded one Strike and one Defend", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -1050,10 +1325,25 @@ public sealed class KaleidoscopeStats : SimpleCounterStats<Kaleidoscope>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Assert("registered; fires on pickup", () =>
-            new TestResult(Amount >= 0, $"Amount={Amount} (AfterObtained offers rewards on real pickup)"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        // AfterObtained offers Cards (2) cross-character card rewards through a rewards screen on a
+        // real pickup only; the silent add never fires it. The screen is closed in Cleanup.
+        runner.Do("add relic silently", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("silent add offers nothing", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("pick the relic up for real", () =>
+        {
+            TestHelpers.RemoveRelic(RelicId);
+            TestHelpers.ObtainRelic(RelicId);
+        });
+        runner.Assert("offered Cards rewards on pickup", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Cleanup(() => { TestHelpers.CloseOverlays(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }

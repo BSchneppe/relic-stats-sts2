@@ -28,19 +28,22 @@ public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergin
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // TryModifyRewards runs inside Hook.ModifyRewards when the combat rewards are generated,
+        // about a second after victory, so wait for RewardsGenerated rather than CombatVictory.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("nothing before the rewards", () =>
+            new TestResult(Amount == 0, $"expected 0 during combat, got {Amount}"));
         runner.Do("win combat", () => TestHelpers.WinCombat());
-        runner.WaitFor(GameEvent.CombatVictory);
-        runner.Assert("tracked gold", () =>
+        runner.WaitFor(GameEvent.RewardsGenerated, 15000);
+        runner.Assert("tracked gold reward", () =>
         {
-            // TryModifyRewards fires during combat reward flow after victory.
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Gold.IntValue ?? -1;
-            return new TestResult(Amount >= 0, $"got {Amount}, expected {expected} if reward triggered");
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.CloseOverlays(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -95,16 +98,26 @@ public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // A card added to the permanent deck reaches AfterCardChangedPiles with Pile == Deck and
+        // the relic gains gold; a card added to a combat pile (Hand) must not count.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("win combat", () => TestHelpers.WinCombat());
-        runner.WaitFor(GameEvent.CombatVictory);
-        runner.Assert("tracked gold", () =>
+        runner.Do("add card to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
+        runner.WaitFor(GameEvent.GoldGained, 15000);
+        runner.Assert("tracked gold for a deck card", () =>
         {
-            // AfterCardChangedPiles fires when cards enter permanent deck.
-            // Combat victory reward card selection may trigger this if player adds a card.
-            return new TestResult(Amount >= 0, $"got {Amount} (requires card entering permanent deck)");
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Gold.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("add card to hand", () => TestHelpers.AddCardToCombatPile("STRIKE_IRONCLAD", "Hand"));
+        runner.WaitFor(GameEvent.CardChangedPiles, 15000);
+        runner.Assert("combat pile card does not count", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Gold.IntValue ?? -1;
+            return new TestResult(Amount == expected, $"expected still {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -127,14 +140,36 @@ public sealed class MawBankStats : SimpleCounterStats<MawBank>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // Gold per room entered (the combat room, then a rest site) until an item is bought:
+        // with HasItemBeenBought set, entering a shop must not count.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked gold", () =>
+        runner.Assert("tracked gold for the combat room", () =>
         {
-            // AfterRoomEntered fires for each room entered; StartFight enters a combat room.
-            // MawBank should gain gold if HasItemBeenBought is false.
-            return new TestResult(Amount >= 0, $"got {Amount} (gains gold per room if no item bought)");
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = relic?.DynamicVars.Gold.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
+        runner.WaitFor(GameEvent.RoomEntered, 15000);
+        runner.Assert("tracked gold for the rest site", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = 2 * (relic?.DynamicVars.Gold.IntValue ?? -1);
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("mark an item bought and enter shop", () =>
+        {
+            TestHelpers.GetRelic<MawBank>()!.HasItemBeenBought = true;
+            TestHelpers.EnterShop();
+        });
+        runner.WaitFor(GameEvent.RoomEntered, 15000);
+        runner.Assert("no gold after an item was bought", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = 2 * (relic?.DynamicVars.Gold.IntValue ?? -1);
+            return new TestResult(Amount == expected, $"expected still {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
