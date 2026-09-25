@@ -54,6 +54,7 @@ public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergin
 public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
 {
     public override string Format => "Gained {0} bonus [gold]Gold[/gold].";
+    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BowlerHat __instance, decimal amount, decimal __result, Player player)
     {
         if (player != __instance.Owner) return;

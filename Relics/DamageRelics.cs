@@ -256,12 +256,15 @@ public sealed class MrStrugglesStats : SimpleCounterStats<MrStruggles>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked damage", () => {
-            var combatState = TestHelpers.Player!.Creature.CombatState!;
-            var expected = TestHelpers.Player!.PlayerCombatState!.TurnNumber * combatState.HittableEnemies.Count;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        // The relic deals TurnNumber damage to every hittable enemy each player turn; the tracker adds
+        // TurnNumber * HittableEnemies.Count. One Nibbit: 1 on turn 1, then 1 + 2 = 3 by turn 2.
+        runner.Assert("tracked turn-1 damage", () =>
+            new TestResult(Amount == 1, $"expected 1 (turn 1 x 1 enemy), got {Amount}"));
+        runner.Do("god mode + protect enemy + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("tracked turn-2 damage on top", () =>
+            new TestResult(Amount == 3, $"expected 3 (1 + 2 against one Nibbit), got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }

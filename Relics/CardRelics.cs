@@ -181,7 +181,7 @@ public sealed class PaelsBloodStats : SimpleCounterStats<PaelsBlood>
 public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 {
     public override string Format => "Drew {0} additional cards.";
-    public override StatCadence Cadence => StatCadence.Total;
+    public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(RingOfTheDrake __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -546,6 +546,7 @@ public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
 public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
 {
     public override string Format => "Swapped {0} cards.";
+    public override StatCadence Cadence => StatCadence.Combat;
     internal static GamblingChip? ActiveInstance;
 
     public static void Prefix(GamblingChip __instance, Player player)
@@ -968,28 +969,32 @@ public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
 {
     public override string Format => "Drew {0} cards.";
 
-    [ThreadStatic] private static int _exhaustedBefore;
-
-    public static void Prefix(JossPaper __instance)
+    // The game does CardsExhausted++, then DrawIfThresholdMet awaits CardPileCmd.Draw of
+    // CardsExhausted / ExhaustAmount cards and only afterwards wraps the counter. The Prefix decides
+    // from the pre-increment counter whether this exhaust reaches the threshold and captures the hand
+    // count (__state, -1 when it does not); the Postfix wraps the returned Task and counts the
+    // hand-size increase once the draw has completed, so an empty draw pile counts nothing.
+    public static void Prefix(JossPaper __instance, CardModel card, bool causedByEthereal, out int __state)
     {
-        _exhaustedBefore = __instance.CardsExhausted;
-    }
-
-    public static void Postfix(JossPaper __instance, CardModel card, bool causedByEthereal)
-    {
+        __state = -1;
         if (card.Owner != __instance.Owner) return;
         if (causedByEthereal) return;
-        // The game does CardsExhausted++, then DrawIfThresholdMet awaits CardPileCmd.Draw and only
-        // afterwards does CardsExhausted %= ExhaustAmount. When there is nothing to draw, the Draw
-        // completes synchronously, so by the time this Postfix runs the counter has already wrapped
-        // to 0 and reading it here undercounts. Replay the game's arithmetic on the value captured
-        // before the increment instead. The draw count is CardsExhausted / ExhaustAmount, exactly as
-        // DrawIfThresholdMet computes it (CardsVar(1) is display-only).
-        int threshold = __instance.DynamicVars["ExhaustAmount"].IntValue;
-        int after = _exhaustedBefore + 1;
-        if (after < threshold) return;
-        int drawn = after / threshold;
-        Track(__instance, s => s.Amount += drawn);
+        if (__instance.CardsExhausted + 1 < __instance.DynamicVars["ExhaustAmount"].IntValue) return;
+        __state = PileType.Hand.GetPile(__instance.Owner).Cards.Count;
+    }
+
+    public static void Postfix(JossPaper __instance, ref Task __result, int __state)
+    {
+        if (__state < 0) return;
+        __result = CountWhenDone(__instance, __result, __state);
+    }
+
+    private static async Task CountWhenDone(JossPaper relic, Task inner, int handBefore)
+    {
+        await inner;
+        int drawn = PileType.Hand.GetPile(relic.Owner).Cards.Count - handBefore;
+        if (drawn <= 0) return;
+        Track(relic, s => s.Amount += drawn);
     }
 
 #if DEBUG
@@ -1013,6 +1018,7 @@ public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
             new TestResult(Amount == 0, $"expected 0, got {Amount}"));
         runner.Do("exhaust card 5", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.ExhaustCard(); });
         runner.WaitFor(GameEvent.CardExhausted);
+        runner.WaitUntil("the threshold draw completed", () => Amount > 0);
         runner.Assert("tracked one draw on the 5th exhaust", () =>
             new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });

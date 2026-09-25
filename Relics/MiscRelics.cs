@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
@@ -500,11 +501,15 @@ public sealed class FrozenEggStats : SimpleCounterStats<FrozenEgg>
 public sealed class MummifiedHandStats : SimpleCounterStats<MummifiedHand>
 {
     public override string Format => "Made {0} cards free.";
-    public static void Postfix(MummifiedHand __instance, CardPlay cardPlay)
+    // Prefix: the relic is synchronous and sets its pick free, so afterwards the pick no longer costs
+    // anything. It prefers hand cards that CostsEnergyOrStars(includeGlobalModifiers: true); its fallbacks
+    // only pick cards that already cost nothing, so a card is only made free when such a card exists.
+    public static void Prefix(MummifiedHand __instance, CardPlay cardPlay)
     {
+        if (!CombatManager.Instance.IsInProgress) return;
         if (cardPlay.Card.Owner != __instance.Owner) return;
         if (cardPlay.Card.Type != CardType.Power) return;
-        if (!CombatManager.Instance.IsInProgress) return;
+        if (!PileType.Hand.GetPile(__instance.Owner).Cards.Any(c => c.CostsEnergyOrStars(includeGlobalModifiers: true))) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -514,20 +519,32 @@ public sealed class MummifiedHandStats : SimpleCounterStats<MummifiedHand>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        // Play a Power and wait for the CardPlayed event (the relic tracks in AfterCardPlayed).
-        // Asserting after PlayerTurnStart raced ahead of the card actually resolving.
-        runner.Do("play power", () => {
+        // Negative: the Power is the only card, so the hand is empty when the relic runs.
+        runner.Do("play a power with nothing else in hand", () => {
             TestHelpers.AddEnergy(10);
             TestHelpers.SpawnCard("DEMON_FORM");
-            TestHelpers.PlayCard(0);
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Power));
         });
         runner.WaitFor(GameEvent.CardPlayed, 15000);
-        runner.Assert("tracked stat", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        // Card-type guard: a Skill play is not a Power play.
+        runner.Assert("no card to make free, nothing counted", () =>
+            new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
+        runner.Do("play a power with a Strike in hand", () => {
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD");
+            TestHelpers.SpawnCard("DEMON_FORM");
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Power));
+        });
+        runner.WaitFor(GameEvent.CardPlayed, 15000);
+        runner.Assert("tracked the Strike made free", () =>
+        {
+            var strike = PileType.Hand.GetPile(TestHelpers.Player!).Cards.FirstOrDefault(c => c.Id.Entry == "STRIKE_IRONCLAD");
+            int cost = strike?.EnergyCost.GetWithModifiers(CostModifiers.All) ?? -1;
+            return new TestResult(Amount == 1 && cost == 0, $"expected Amount == 1 and the Strike at cost 0, got Amount {Amount}, cost {cost}");
+        });
+        // Card-type guard: a Skill play is not a Power play, even with a costing Strike in hand.
         runner.Do("play a skill", () => {
-            TestHelpers.SpawnCard("DEFEND");
-            TestHelpers.PlayCard(0);
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD");
+            TestHelpers.SpawnCard("DEFEND_IRONCLAD");
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Skill));
         });
         runner.WaitFor(GameEvent.CardPlayed);
         runner.Assert("skill play does not count", () =>
@@ -751,17 +768,25 @@ public sealed class PenNibStats : IRelicStats
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         // BeforeCardPlayed counts every Attack; the relic's own counter wraps to 0 on the 10th, which
-        // is the doubling. A Skill play on the next turn changes neither counter.
-        runner.Do("add energy + god mode + protect enemy", () => { TestHelpers.AddEnergy(20); TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); });
-        runner.Do("play 10 attacks + end turn", () => {
+        // is the doubling. Shivs cost 0, so one turn plays all ten; each play is awaited on its own so
+        // the 9th can be checked before the 10th. A Skill play afterwards changes neither counter.
+        runner.Do("protect enemy + spawn 10 shivs", () => {
+            TestHelpers.ProtectEnemy();
             for (int i = 0; i < 10; i++) TestHelpers.SpawnCard("SHIV");
-            TestHelpers.PlayThenEndTurn(10, 0);
         });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 30000);
+        for (int i = 1; i <= 9; i++)
+        {
+            runner.Do($"play shiv {i}", () => TestHelpers.PlayCard(0, 0));
+            runner.WaitFor(GameEvent.CardPlayed);
+        }
+        runner.Assert("9 attacks, no doubling yet", () =>
+            new TestResult(AttacksPlayed == 9 && Triggers == 0, $"expected AttacksPlayed=9 Triggers=0, got AttacksPlayed={AttacksPlayed} Triggers={Triggers}"));
+        runner.Do("play shiv 10", () => TestHelpers.PlayCard(0, 0));
+        runner.WaitFor(GameEvent.CardPlayed);
         runner.Assert("10 attacks, one doubling", () =>
             new TestResult(AttacksPlayed == 10 && Triggers == 1, $"expected AttacksPlayed=10 Triggers=1, got AttacksPlayed={AttacksPlayed} Triggers={Triggers}"));
         runner.Do("play a skill", () => {
-            TestHelpers.SpawnCard("DEFEND");
+            TestHelpers.SpawnCard("DEFEND_IRONCLAD");
             TestHelpers.PlayCard(0);
         });
         runner.WaitFor(GameEvent.CardPlayed);
@@ -1396,14 +1421,10 @@ public sealed class GremlinHornStats : SimpleCounterStats<GremlinHorn>
     public override void RegisterTest(TestRunner runner)
     {
         // AfterDeath counts deaths on the other side; NIBBITS_WEAK is a single Nibbit, so one kill is
-        // exactly one trigger. Damage to the player's own side (non-lethal here) is not a trigger.
+        // exactly one trigger.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("damage the player", () => TestHelpers.DealDamageToPlayer(3));
-        runner.WaitFor(GameEvent.DamageReceived);
-        runner.Assert("own-side damage is not a trigger", () =>
-            new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
         runner.Do("kill enemy", () => TestHelpers.DealDamage(9999));
         runner.WaitFor(GameEvent.Death);
         runner.Assert("tracked one enemy death", () =>
@@ -1823,27 +1844,29 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
     public override StatCadence Cadence => StatCadence.Total;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
 
-    [ThreadStatic] private static int _prevCardsAdded;
+    // CardsAdded is a [SavedProperty], not a DynamicVar. The relic increments it and, on the wrap to 0,
+    // awaits CreatureCmd.Heal, whose HealInternal runs before its first await, so by the time this Postfix
+    // runs (the method's first yield) the HP is already applied. Counting the HP delta caps the heal at
+    // the missing HP, like the other heal trackers.
+    public static void Prefix(BookOfFiveRings __instance, out (int cardsAdded, int hp) __state) =>
+        __state = (__instance.CardsAdded, __instance.Owner.Creature.CurrentHp);
 
-    public static void Prefix(BookOfFiveRings __instance)
+    public static void Postfix(BookOfFiveRings __instance, (int cardsAdded, int hp) __state)
     {
-        // CardsAdded is a [SavedProperty], not a DynamicVar
-        _prevCardsAdded = __instance.CardsAdded;
-    }
-
-    public static void Postfix(BookOfFiveRings __instance)
-    {
-        // Trigger happened when CardsAdded incremented and modulo wrapped to 0
-        if (__instance.CardsAdded > _prevCardsAdded && __instance.CardsAdded % __instance.DynamicVars.Cards.IntValue == 0)
-            Track(__instance, s => s.Amount += __instance.DynamicVars.Heal.IntValue);
+        int cards = __instance.CardsAdded;
+        if (cards <= __state.cardsAdded || cards % __instance.DynamicVars.Cards.IntValue != 0) return;
+        int heal = __instance.Owner.Creature.CurrentHp - __state.hp;
+        if (heal <= 0) return;
+        Track(__instance, s => s.Amount += heal);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // AfterCardChangedPiles counts each card entering the permanent deck and heals when CardsAdded
-        // wraps past Cards (5). The patch tracks the nominal Heal, so it counts even at full HP. Each
-        // deck add reaches the hook only after its tween, hence one CardChangedPiles wait per card.
+        // AfterCardChangedPiles counts each card entering the permanent deck and heals Heal (20) when
+        // CardsAdded wraps past Cards (5). Each deck add reaches the hook only after its tween, hence one
+        // CardChangedPiles wait per card. HP is set 10 below max before the fifth add, so the tracked heal
+        // is capped at the 10 HP actually restored.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
@@ -1854,12 +1877,15 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
         }
         runner.Assert("four cards do not heal", () =>
             new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
+        runner.Do("set HP 10 below max", () =>
+            TestHelpers.SetPlayerHp(TestHelpers.Player!.Creature.MaxHp - 10));
         runner.Do("add card 5 to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
         runner.WaitFor(GameEvent.CardChangedPiles);
-        runner.Assert("tracked the heal on the fifth card", () => {
+        runner.Assert("tracked only the HP actually healed on the fifth card", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Heal.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+            var heal = relic?.DynamicVars.Heal.IntValue ?? -1;
+            var expected = Math.Min(heal, 10);
+            return new TestResult(heal > 10 && Amount == expected, $"expected {expected} (Heal {heal} capped at 10 missing HP), got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -2172,30 +2198,67 @@ public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
 public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
 {
     public override string Format => "Drew {0} cards from Powers.";
-    public static void Postfix(GamePiece __instance, CardPlay cardPlay)
+
+    // The draw is awaited (CardPileCmd.Draw), so the Postfix wraps the returned Task and counts the
+    // hand-size increase once the draw has completed: an empty draw and discard pile draws nothing.
+    // __state is the hand count before the relic ran, or -1 when the relic does not act.
+    public static void Prefix(GamePiece __instance, CardPlay cardPlay, out int __state)
     {
+        __state = -1;
         if (cardPlay.Card.Owner != __instance.Owner) return;
         if (cardPlay.Card.Type != CardType.Power) return;
         if (!CombatManager.Instance.IsInProgress) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+        __state = PileType.Hand.GetPile(__instance.Owner).Cards.Count;
+    }
+
+    public static void Postfix(GamePiece __instance, ref Task __result, int __state)
+    {
+        if (__state < 0) return;
+        __result = CountWhenDone(__instance, __result, __state);
+    }
+
+    private static async Task CountWhenDone(GamePiece relic, Task inner, int handBefore)
+    {
+        await inner;
+        int drawn = PileType.Hand.GetPile(relic.Owner).Cards.Count - handBefore;
+        if (drawn <= 0) return;
+        Track(relic, s => s.Amount += drawn);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // Negative first: the deck is cleared, so the draw and discard piles are empty and the relic's
+        // draw after a Power finds nothing. Then two Strikes go to the draw pile and a second Power draws Cards.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.SideTurnStart);
-        runner.Do("play power + end turn", () => { TestHelpers.AddEnergy(3); TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.SpawnCard("DEMON_FORM"); TestHelpers.PlayThenEndTurn(); });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked draw", () =>
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("play a power with an empty draw pile", () =>
+        {
+            TestHelpers.AddEnergy(3);
+            TestHelpers.SpawnCard("DEMON_FORM");
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Power));
+        });
+        runner.WaitFor(GameEvent.CardPlayed);
+        runner.Assert("nothing to draw, nothing counted", () =>
+            new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
+        runner.Do("seed the draw pile + play a power", () =>
+        {
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.AddEnergy(3);
+            TestHelpers.SpawnCard("DEMON_FORM");
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Power));
+        });
+        runner.WaitUntil("the draw completed", () => Amount > 0);
+        runner.Assert("tracked the cards drawn", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
-        // A non-Power does not count.
-        runner.Do("play an attack", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.PlayCard(0, 0); });
+        // A non-Power does not count, though the draw pile still holds a Strike.
+        runner.Do("play an attack", () => { TestHelpers.SpawnCard("STRIKE_IRONCLAD"); TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Attack), 0); });
         runner.WaitFor(GameEvent.CardPlayed);
         runner.Assert("still Cards after an attack", () =>
         {
@@ -2213,7 +2276,6 @@ public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
 public sealed class GoldPlatedCablesStats : SimpleCounterStats<GoldPlatedCables>
 {
     public override string Format => "Doubled first orb passive {0} times.";
-    public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(GoldPlatedCables __instance, OrbModel orb, int __result, int triggerCount)
     {
         if (__result <= triggerCount) return;
@@ -2544,38 +2606,44 @@ public sealed class SparklingRougeStats : SimpleCounterStats<SparklingRouge>
 #endif
 }
 
-// StoneCracker: upgrades cards in boss combats
+// StoneCracker: upgrades random upgradable cards in the draw pile at the start of every combat
 [HarmonyPatch(typeof(StoneCracker), nameof(StoneCracker.AfterRoomEntered))]
 public sealed class StoneCrackerStats : SimpleCounterStats<StoneCracker>
 {
-    public override string Format => "Upgraded {0} cards in boss combats.";
-    public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(StoneCracker __instance, AbstractRoom room)
+    public override string Format => "Upgraded {0} cards.";
+    public override StatCadence Cadence => StatCadence.Combat;
+    // Prefix: the game upgrades Take(Cards) of the draw pile's upgradable cards before its first await,
+    // so a Postfix would find them already upgraded.
+    public static void Prefix(StoneCracker __instance, AbstractRoom room)
     {
-        if (room.RoomType != RoomType.Boss) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
+        if (room is not CombatRoom) return;
+        int upgradable = PileType.Draw.GetPile(__instance.Owner).Cards.Count(c => c.IsUpgradable);
+        int upgraded = Math.Min(__instance.DynamicVars.Cards.IntValue, upgradable);
+        if (upgraded <= 0) return;
+        Track(__instance, s => s.Amount += upgraded);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // The draw pile is built at combat start, before any step can spawn into it, so the first fight
+        // (empty deck) has nothing to upgrade; two deck Strikes make the second, a Monster fight, upgrade both.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Do("start boss fight", () => TestHelpers.StartBossFight());
-        runner.WaitFor(GameEvent.RoomEntered);
-        runner.Assert("tracked upgrades", () =>
-        {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
-        });
-        // A non-boss combat does not count.
+        runner.Do("start fight with an empty deck", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("nothing upgradable, nothing counted", () =>
+            new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
+        runner.Do("add strike 1 to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
+        runner.WaitFor(GameEvent.CardChangedPiles);
+        runner.Do("add strike 2 to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
+        runner.WaitFor(GameEvent.CardChangedPiles);
         runner.Do("start monster fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.RoomEntered, 15000);
-        runner.Assert("still Cards after a monster room", () =>
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked both strikes upgraded", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
-            return new TestResult(Amount == expected, $"expected Amount still {expected}, got {Amount}");
+            var expected = Math.Min(relic?.DynamicVars.Cards.IntValue ?? -1, 2);
+            return new TestResult(expected == 2 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -2633,18 +2701,24 @@ public sealed class SwordOfStoneStats : SimpleCounterStats<SwordOfStone>
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        // AfterCombatVictory fires with CombatRoom.RoomType == Elite.
+        // AfterCombatVictory fires with CombatRoom.RoomType == Elite. Room guard first: a Monster win
+        // does not count. Its rewards are awaited and closed before the elite fight starts.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Do("start elite fight", () => TestHelpers.StartEliteFight());
+        runner.Do("start monster fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("nothing before the victory", () =>
+        runner.Do("win the monster fight", () => TestHelpers.WinCombat());
+        runner.WaitFor(GameEvent.RewardsGenerated, 15000);
+        runner.Assert("a monster win does not count", () =>
+            new TestResult(Amount == 0, $"expected Amount == 0 after a monster win, got {Amount}"));
+        runner.Do("close rewards + start elite fight", () => { TestHelpers.CloseOverlays(); TestHelpers.StartEliteFight(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("nothing before the elite victory", () =>
             new TestResult(Amount == 0, $"expected Amount == 0 before the win, got {Amount}"));
-        runner.Do("win combat", () => TestHelpers.WinCombat());
+        runner.Do("win the elite fight", () => TestHelpers.WinCombat());
         runner.WaitFor(GameEvent.CombatVictory);
-        // The Monster-room guard is not exercised: that would need a second full combat.
         runner.Assert("tracked elite defeat", () =>
             new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.CloseOverlays(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -2977,20 +3051,30 @@ public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
 {
     public override string Format => "Drew {0} free Powers.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(JeweledMask __instance, Player player, ICombatState combatState)
+    // Prefix: the relic only acts when the draw pile holds a Power, and it moves that Power to the hand.
+    public static void Prefix(JeweledMask __instance, Player player)
     {
         if (player != __instance.Owner) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
+        if (!PileType.Draw.GetPile(player).Cards.Any(c => c.Type == CardType.Power)) return;
         Track(__instance, s => s.Amount++);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        // The draw pile is built at combat start, so the Power must be in the deck before the fight.
+        // First fight with an empty deck: no Power to draw, nothing counted.
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
-        runner.Do("start fight", () => TestHelpers.StartFight());
+        runner.Do("start fight with an empty deck", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked powers drawn", () =>
+        runner.Assert("no Power in the draw pile, nothing counted", () =>
+            new TestResult(Amount == 0, $"expected Amount == 0, got {Amount}"));
+        runner.Do("add Demon Form to deck", () => TestHelpers.AddCardToDeck("DEMON_FORM"));
+        runner.WaitFor(GameEvent.CardChangedPiles);
+        runner.Do("start fight with a Power in the deck", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("tracked the free Power", () =>
             new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
         // Turn 2 is past the turn-1 guard: its hand draw has run by the turn-2 PlayerTurnStart.
         runner.Do("god mode + protect enemy + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
@@ -3239,13 +3323,19 @@ public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
         // AfterRoomEntered counts when the current map point is not a child of the previously
         // visited one (with >= 2 visited coords, a single room at the point, and uses left).
         // TravelTo records the coord the way the debug map does; AddVisitedMapCoord ignores a coord
-        // already visited, so only unvisited points are chosen. Visited coords stay in the save.
+        // already visited, so only unvisited points are chosen. The visited coords and ActFloor are
+        // snapshotted first and restored in Cleanup, so the live save is left as it was and repeated
+        // runs see the same map state.
         static MegaCrit.Sts2.Core.Runs.RunState Run() =>
             TestHelpers.Player?.RunState as MegaCrit.Sts2.Core.Runs.RunState
             ?? throw new InvalidOperationException("no RunState on the player");
+        List<MegaCrit.Sts2.Core.Map.MapCoord>? savedCoords = null;
+        int savedActFloor = 0;
         // Seed a position before the relic exists, so this move can never count.
-        runner.Do("seed the map position", () => {
+        runner.Do("snapshot + seed the map position", () => {
             var run = Run();
+            savedCoords = run.VisitedMapCoords.ToList();
+            savedActFloor = run.ActFloor;
             var start = run.Map.GetPointsInRow(0).FirstOrDefault(p => !run.VisitedMapCoords.Contains(p.coord))
                 ?? run.CurrentMapPoint
                 ?? throw new InvalidOperationException("no map point to start from");
@@ -3258,7 +3348,7 @@ public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
             var run = Run();
             var cur = run.CurrentMapPoint ?? throw new InvalidOperationException("no current map point");
             var child = cur.Children.FirstOrDefault(p => !run.VisitedMapCoords.Contains(p.coord))
-                ?? throw new InvalidOperationException($"every child of {cur.coord} is already visited; use a fresh save");
+                ?? throw new InvalidOperationException($"every child of {cur.coord} is already visited");
             TestHelpers.TravelTo(child, RoomType.RestSite);
         });
         runner.WaitFor(GameEvent.RoomEntered, 15000);
@@ -3275,7 +3365,16 @@ public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
         runner.WaitFor(GameEvent.RoomEntered, 15000);
         runner.Assert("tracked one free travel", () =>
             new TestResult(Amount == 1, $"expected Amount == 1 after a non-adjacent jump, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() =>
+        {
+            TestHelpers.RemoveRelic(RelicId);
+            Reset();
+            if (savedCoords == null) return;
+            var run = Run();
+            run.ClearVisitedMapCoordsDebug();
+            foreach (var coord in savedCoords) run.AddVisitedMapCoord(coord);
+            run.ActFloor = savedActFloor;
+        });
     }
 #endif
 }

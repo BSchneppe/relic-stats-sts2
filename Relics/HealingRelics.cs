@@ -98,6 +98,7 @@ public sealed class BlackBloodStats : SimpleCounterStats<BlackBlood>
 public sealed class BloodVialStats : SimpleCounterStats<BloodVial>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(BloodVial __instance, Player player, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;
@@ -372,8 +373,13 @@ public sealed class PantographStats : SimpleCounterStats<Pantograph>
             TestHelpers.AddRelic(RelicId);
             TestHelpers.Player!.Creature.SetCurrentHpInternal(1);
         });
-        runner.Do("start boss fight", () => TestHelpers.StartBossFight());
         // BeforeCombatStart fires before the CombatStart event; wait for CombatStart.
+        // Boss-room guard: a Monster fight at 1 HP heals nothing.
+        runner.Do("start monster fight", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.CombatStart);
+        runner.Assert("no heal in a monster fight", () =>
+            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("start boss fight", () => TestHelpers.StartBossFight());
         runner.WaitFor(GameEvent.CombatStart);
         runner.Assert("tracked healing", () =>
             new TestResult(Amount == 25, $"expected 25, got {Amount}"));
@@ -592,6 +598,7 @@ public sealed class TungstenRodStats : SimpleCounterStats<TungstenRod>
 public sealed class FakeBloodVialStats : SimpleCounterStats<FakeBloodVial>
 {
     public override string Format => "Healed {0} HP.";
+    public override StatCadence Cadence => StatCadence.Combat;
     protected override string FormatStat(int amount) => FormatStatGreen(amount);
     public static void Prefix(FakeBloodVial __instance, out int __state) =>
         __state = __instance.Owner.Creature.CurrentHp;

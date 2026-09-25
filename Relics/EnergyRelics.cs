@@ -1362,8 +1362,10 @@ public sealed class SpikedGauntletsStats : IRelicStats
     public static void AfterCardPlayedPostfix(CardPlay cardPlay)
     {
         if (cardPlay.Card.Type != CardType.Power) return;
-        // Auto-plays and Replay repeats do not pay energy, so the surcharge never applied to them.
-        if (cardPlay.IsAutoPlay || cardPlay.PlayIndex != 0) return;
+        // Count only plays that actually spent energy. Auto-plays pass EnergySpent 0, so Whispering
+        // Earring's pre-paid surcharges (it pays, then auto-plays) are missed; a Power made free by
+        // another effect spends 0 too and is no longer counted. Replay repeats (PlayIndex > 0) never pay.
+        if (cardPlay.Resources.EnergySpent <= 0 || cardPlay.PlayIndex != 0) return;
         var relic = cardPlay.Card.Owner?.GetRelic<SpikedGauntlets>();
         if (relic == null) return;
         if (!TryGet(relic, out var stats)) return;
