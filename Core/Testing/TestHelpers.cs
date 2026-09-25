@@ -81,21 +81,6 @@ public static class TestHelpers
         Player.RemoveRelicInternal(relic, silent: true);
     }
 
-    /// <summary>
-    /// Gives the relic the way the game does on pickup, so its AfterObtained runs. <see cref="AddRelic"/>
-    /// uses the silent internal add and never fires it, which is right for most tests but makes every
-    /// on-pickup relic (Hefty Tablet, Neow's Bones, Pumpkin Candle's kindle…) untestable.
-    /// </summary>
-    public static void ObtainRelic(string relicId)
-    {
-        if (Player == null) { MainFile.Logger.Warn($"[ObtainRelic] '{relicId}' skipped: no player"); return; }
-        var id = relicId.ToUpperInvariant();
-        var relicModel = ModelDb.AllRelics.FirstOrDefault(r => r.Id.Entry == id);
-        if (relicModel == null) { MainFile.Logger.Warn($"[ObtainRelic] '{id}' not found in ModelDb"); return; }
-        TaskHelper.RunSafely(RelicCmd.Obtain(relicModel.ToMutable(), Player));
-        MainFile.Logger.Info($"[ObtainRelic] {id} obtained, present={Player.Relics.Any(r => r.Id.Entry == id)}");
-    }
-
     /// <summary>The player's live instance of a relic, for reading its public counters (TimesLifted, CombatsSeen…).</summary>
     public static T? GetRelic<T>() where T : RelicModel => Player?.GetRelic<T>();
 
@@ -892,7 +877,7 @@ public static class TestHelpers
         _selectorScope = null;
     }
 
-    /// <summary>Closes any overlay screen a relic left open (reward screens from Kaleidoscope / Neow's Bones).</summary>
+    /// <summary>Closes any overlay screen a relic left open (reward screens after a win, or a relic's own reward screen).</summary>
     public static void CloseOverlays()
     {
         try { NOverlayStack.Instance?.Clear(); }

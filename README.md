@@ -21,7 +21,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 
 ## Coverage
 
-**190 of 298** relics tracked.
+**184 of 298** relics tracked.
 
 <details>
 <summary>Click to expand full relic coverage</summary>
@@ -138,7 +138,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Gremlin Horn | :white_check_mark: | Triggered X times (drew cards + gained Energy) |
 | Hand Drill | :white_check_mark: | Applied Vulnerable X times |
 | Happy Flower | :white_check_mark: | Generated X Energy |
-| Hefty Tablet | :white_check_mark: | Offered X rare cards |
+| Hefty Tablet | | |
 | Helical Dart | :white_check_mark: | Gained X Dexterity from Shivs |
 | History Course | :white_check_mark: | Auto-replayed X cards |
 | Horn Cleat | :white_check_mark: | Gained X Block |
@@ -151,7 +151,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Jewelry Box | | |
 | Joss Paper | :white_check_mark: | Drew X cards |
 | Juzu Bracelet | | |
-| Kaleidoscope | :white_check_mark: | Offered X cross-character card rewards |
+| Kaleidoscope | | |
 | Kifuda | | |
 | Kunai | :white_check_mark: | Gained X Dexterity |
 | Kusarigama | :white_check_mark: | Dealt X Damage |
@@ -188,8 +188,8 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Mummified Hand | :white_check_mark: | Made X cards free |
 | Music Box | :white_check_mark: | Copied X attacks as Ethereal |
 | Mystic Lighter | :white_check_mark: | Added X Damage to enchanted attacks |
-| Neows Bones | :white_check_mark: | Offered X relics, added X curses |
-| Neows Talisman | :white_check_mark: | Upgraded X starter cards |
+| Neows Bones | | |
+| Neows Talisman | | |
 | Neows Torment | | |
 | New Leaf | | |
 | Ninja Scroll | :white_check_mark: | Created X Shivs |
@@ -222,7 +222,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Pendulum | :white_check_mark: | Drew X cards |
 | Permafrost | :white_check_mark: | Gained X Block |
 | Petrified Toad | :white_check_mark: | Generated X potions |
-| Phial Holster | :white_check_mark: | Gained X potion slots, granted X potions |
+| Phial Holster | | |
 | Philosophers Stone | :white_check_mark: | Complex tracking |
 | Phylactery Unbound | :white_check_mark: | Complex tracking |
 | Planisphere | :white_check_mark: | Healed X HP |
@@ -266,7 +266,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Shovel | :white_check_mark: | Offered dig X times |
 | Shuriken | :white_check_mark: | Gained X Strength |
 | Signet Ring | | |
-| Silken Tress | :white_check_mark: | Enchanted X card rewards with Glam |
+| Silken Tress | | |
 | Silver Crucible | :white_check_mark: | Upgraded card rewards X times |
 | Sling Of Courage | :white_check_mark: | Gained X Strength |
 | Small Capsule | | |
