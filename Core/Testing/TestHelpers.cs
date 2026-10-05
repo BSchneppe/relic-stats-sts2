@@ -850,7 +850,8 @@ public static class TestHelpers
     public static CardReward GenerateCardReward(RoomType roomType = RoomType.Monster)
     {
         var options = CardCreationOptions.ForRoom(Player!, roomType)
-            .WithFlags(CardCreationFlags.IsFromCombat | CardCreationFlags.IsCardReward);
+            .WithFlags((Enum.TryParse<CardCreationFlags>("IsFromCombat", out var combatFlag) ? combatFlag : default)
+                | CardCreationFlags.IsCardReward);
         var reward = new CardReward(options, 3, Player!);
         reward.Populate();
         MainFile.Logger.Info($"[GenerateCardReward] {roomType}: {reward.Cards.Count()} options");

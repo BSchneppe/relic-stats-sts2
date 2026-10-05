@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -24,7 +25,7 @@ namespace RelicStats.Relics;
 [HarmonyPatch(typeof(Anchor), nameof(Anchor.BeforeCombatStart))]
 public sealed class AnchorStats : SimpleCounterStats<Anchor>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Anchor __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
@@ -58,7 +59,7 @@ public sealed class AnchorStats : SimpleCounterStats<Anchor>
 [HarmonyPatch(typeof(FakeAnchor), nameof(FakeAnchor.BeforeCombatStart))]
 public sealed class FakeAnchorStats : SimpleCounterStats<FakeAnchor>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(FakeAnchor __instance) =>
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
@@ -92,10 +93,10 @@ public sealed class FakeAnchorStats : SimpleCounterStats<FakeAnchor>
 [HarmonyPatch(typeof(CloakClasp), nameof(CloakClasp.BeforeSideTurnEnd))]
 public sealed class CloakClaspStats : SimpleCounterStats<CloakClasp>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
-    public static void Postfix(CloakClasp __instance, CombatSide side)
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
+    public static void Postfix(CloakClasp __instance, IEnumerable<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         var cards = PileType.Hand.GetPile(__instance.Owner).Cards;
         if (cards.Count == 0) return;
         int block = (int)((decimal)cards.Count * __instance.DynamicVars.Block.BaseValue);
@@ -130,7 +131,7 @@ public sealed class CloakClaspStats : SimpleCounterStats<CloakClasp>
 [HarmonyPatch(typeof(IntimidatingHelmet), nameof(IntimidatingHelmet.BeforeCardPlayed))]
 public sealed class IntimidatingHelmetStats : SimpleCounterStats<IntimidatingHelmet>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(IntimidatingHelmet __instance, CardPlay cardPlay)
     {
         if (cardPlay.Card.Owner != __instance.Owner) return;
@@ -180,7 +181,7 @@ public sealed class RegaliteStats : SimpleCounterStats<Regalite>
     private static readonly FieldInfo UsedField =
         AccessTools.Field(typeof(Regalite), "_usedThisTurn");
 
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
 
     public static void Prefix(Regalite __instance, out bool __state) =>
         __state = (bool)UsedField.GetValue(__instance)!;
@@ -241,9 +242,10 @@ public sealed class RegaliteStats : SimpleCounterStats<Regalite>
 [HarmonyPatch(typeof(SelfFormingClay), nameof(SelfFormingClay.AfterDamageReceived))]
 public sealed class SelfFormingClayStats : SimpleCounterStats<SelfFormingClay>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Queued {0} base [gold]Block[/gold] for next turn.";
     public static void Postfix(SelfFormingClay __instance, Creature target, DamageResult result)
     {
+        if (!CombatManager.Instance.IsInProgress) return;
         if (target != __instance.Owner.Creature) return;
         if (result.UnblockedDamage <= 0) return;
         Track(__instance, s => s.Amount += (int)__instance.DynamicVars["BlockNextTurn"].BaseValue);
@@ -283,7 +285,7 @@ public sealed class SelfFormingClayStats : SimpleCounterStats<SelfFormingClay>
 [HarmonyPatch(typeof(BoneFlute), nameof(BoneFlute.AfterAttack))]
 public sealed class BoneFluteStats : SimpleCounterStats<BoneFlute>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(BoneFlute __instance, AttackCommand command)
     {
         if (command.Attacker?.Monster is not MegaCrit.Sts2.Core.Models.Monsters.Osty) return;
@@ -335,7 +337,7 @@ public sealed class BoneFluteStats : SimpleCounterStats<BoneFlute>
 [HarmonyPatch(typeof(HornCleat), nameof(HornCleat.AfterBlockCleared))]
 public sealed class HornCleatStats : SimpleCounterStats<HornCleat>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(HornCleat __instance, Creature creature)
     {
@@ -383,24 +385,20 @@ public sealed class HornCleatStats : SimpleCounterStats<HornCleat>
 [HarmonyPatch(typeof(Orichalcum), nameof(Orichalcum.BeforeSideTurnEnd))]
 public sealed class OrichalcumStats : SimpleCounterStats<Orichalcum>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
-    [System.ThreadStatic] private static bool _hadNoBlock;
-    public static void Prefix(Orichalcum __instance, CombatSide side)
+    private static readonly FieldInfo TriggerField = AccessTools.Field(typeof(Orichalcum), "_shouldTrigger");
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
+    public static void Prefix(Orichalcum __instance, out bool __state) =>
+        __state = (bool)TriggerField.GetValue(__instance)!;
+    public static void Postfix(Orichalcum __instance, bool __state)
     {
-        _hadNoBlock = false;
-        if (side != __instance.Owner.Creature.Side) return;
-        _hadNoBlock = __instance.Owner.Creature.Block <= 0;
-    }
-    public static void Postfix(Orichalcum __instance)
-    {
-        if (!_hadNoBlock) return;
+        if (!__state) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic and plating", () => { TestHelpers.AddRelic(RelicId); TestHelpers.AddRelic("GORGET"); });
         runner.Do("start fight", () => TestHelpers.StartFight("NIBBITS_WEAK"));
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("end turn with no block", () => TestHelpers.EndTurn());
@@ -422,7 +420,7 @@ public sealed class OrichalcumStats : SimpleCounterStats<Orichalcum>
             var expected = relic?.DynamicVars.Block.IntValue ?? -1;
             return new TestResult(Amount == expected, $"expected still {expected}, got {Amount}");
         });
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); TestHelpers.RemoveRelic("GORGET"); Reset(); });
     }
 #endif
 }
@@ -431,24 +429,20 @@ public sealed class OrichalcumStats : SimpleCounterStats<Orichalcum>
 [HarmonyPatch(typeof(FakeOrichalcum), nameof(FakeOrichalcum.BeforeSideTurnEnd))]
 public sealed class FakeOrichalcumStats : SimpleCounterStats<FakeOrichalcum>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
-    [System.ThreadStatic] private static bool _hadNoBlock;
-    public static void Prefix(FakeOrichalcum __instance, CombatSide side)
+    private static readonly FieldInfo TriggerField = AccessTools.Field(typeof(FakeOrichalcum), "_shouldTrigger");
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
+    public static void Prefix(FakeOrichalcum __instance, out bool __state) =>
+        __state = (bool)TriggerField.GetValue(__instance)!;
+    public static void Postfix(FakeOrichalcum __instance, bool __state)
     {
-        _hadNoBlock = false;
-        if (side != __instance.Owner.Creature.Side) return;
-        _hadNoBlock = __instance.Owner.Creature.Block <= 0;
-    }
-    public static void Postfix(FakeOrichalcum __instance)
-    {
-        if (!_hadNoBlock) return;
+        if (!__state) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic and plating", () => { TestHelpers.AddRelic(RelicId); TestHelpers.AddRelic("GORGET"); });
         runner.Do("start fight", () => TestHelpers.StartFight("NIBBITS_WEAK"));
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("end turn with no block", () => TestHelpers.EndTurn());
@@ -470,7 +464,7 @@ public sealed class FakeOrichalcumStats : SimpleCounterStats<FakeOrichalcum>
             var expected = relic?.DynamicVars.Block.IntValue ?? -1;
             return new TestResult(Amount == expected, $"expected still {expected}, got {Amount}");
         });
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); TestHelpers.RemoveRelic("GORGET"); Reset(); });
     }
 #endif
 }
@@ -479,7 +473,7 @@ public sealed class FakeOrichalcumStats : SimpleCounterStats<FakeOrichalcum>
 [HarmonyPatch(typeof(ToughBandages), nameof(ToughBandages.AfterCardDiscarded))]
 public sealed class ToughBandagesStats : SimpleCounterStats<ToughBandages>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(ToughBandages __instance, CardModel card)
     {
         if (card.Owner != __instance.Owner) return;
@@ -552,7 +546,7 @@ public sealed class OrnamentalFanStats : SimpleCounterStats<OrnamentalFan>
     private static readonly System.Reflection.FieldInfo AttacksField =
         AccessTools.Field(typeof(OrnamentalFan), "_attacksPlayedThisTurn");
 
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(OrnamentalFan __instance, CardPlay cardPlay)
     {
         if (cardPlay.Card.Owner != __instance.Owner) return;
@@ -605,7 +599,7 @@ public sealed class OrnamentalFanStats : SimpleCounterStats<OrnamentalFan>
 [HarmonyPatch(typeof(TheAbacus), nameof(TheAbacus.AfterShuffle))]
 public sealed class TheAbacusStats : SimpleCounterStats<TheAbacus>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(TheAbacus __instance, Player shuffler)
     {
         if (shuffler != __instance.Owner) return;
@@ -635,7 +629,7 @@ public sealed class TheAbacusStats : SimpleCounterStats<TheAbacus>
 [HarmonyPatch(typeof(CaptainsWheel), nameof(CaptainsWheel.AfterBlockCleared))]
 public sealed class CaptainsWheelStats : SimpleCounterStats<CaptainsWheel>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(CaptainsWheel __instance, Creature creature)
     {
@@ -675,10 +669,10 @@ public sealed class CaptainsWheelStats : SimpleCounterStats<CaptainsWheel>
 [HarmonyPatch(typeof(Sai), nameof(Sai.AfterSideTurnStart))]
 public sealed class SaiStats : SimpleCounterStats<Sai>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
-    public static void Postfix(Sai __instance, CombatSide side)
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
+    public static void Postfix(Sai __instance, IEnumerable<Creature> participants)
     {
-        if (side != CombatSide.Player) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Block.IntValue);
     }
 
@@ -702,7 +696,7 @@ public sealed class SaiStats : SimpleCounterStats<Sai>
 [HarmonyPatch(typeof(DaughterOfTheWind), nameof(DaughterOfTheWind.AfterCardPlayed))]
 public sealed class DaughterOfTheWindStats : SimpleCounterStats<DaughterOfTheWind>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public static void Postfix(DaughterOfTheWind __instance, CardPlay cardPlay)
     {
         if (cardPlay.Card.Type != CardType.Attack) return;
@@ -746,10 +740,10 @@ public sealed class DaughterOfTheWindStats : SimpleCounterStats<DaughterOfTheWin
 [HarmonyPatch(typeof(RippleBasin), nameof(RippleBasin.BeforeSideTurnEnd))]
 public sealed class RippleBasinStats : SimpleCounterStats<RippleBasin>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
-    public static void Postfix(RippleBasin __instance, CombatSide side)
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
+    public static void Postfix(RippleBasin __instance, IEnumerable<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (CombatManager.Instance.History.CardPlaysFinished.Any(
             (CardPlayFinishedEntry e) =>
                 e.HappenedThisTurn(__instance.Owner.Creature.CombatState) &&
@@ -797,7 +791,7 @@ public sealed class RippleBasinStats : SimpleCounterStats<RippleBasin>
 [HarmonyPatch(typeof(TuningFork), nameof(TuningFork.AfterCardPlayed))]
 public sealed class TuningForkStats : SimpleCounterStats<TuningFork>
 {
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
 
     public static void Prefix(TuningFork __instance, out int __state) =>
         __state = __instance.SkillsPlayed;
@@ -916,7 +910,7 @@ public sealed class PermafrostStats : SimpleCounterStats<Permafrost>
     private static readonly FieldInfo ActivatedField =
         AccessTools.Field(typeof(Permafrost), "_activatedThisCombat");
 
-    public override string Format => "Gained {0} [gold]Block[/gold].";
+    public override string Format => "Provided {0} base [gold]Block[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
 
     public static void Prefix(Permafrost __instance, out bool __state) =>

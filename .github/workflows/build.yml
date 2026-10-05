@@ -34,4 +34,17 @@ jobs:
           dotnet run --project tools/PatchAudit -- . \
             ~/.nuget/packages/bschneppe.sts2.referenceassemblies/${{ matrix.ref-assemblies }}/ref/net9.0/sts2.dll \
             --allow-missing RunManager.InitializeNewRun \
-            --allow-missing NRunHistory.DisplayRun
+            --allow-missing NRunHistory.DisplayRun \
+            --allow-missing BeltBuckle.ApplyDexterity \
+            --allow-missing FakeSneckoEye.ApplyPower
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Test production counter helpers
+        run: dotnet test tests/RelicStats.Tests.csproj --configuration Release

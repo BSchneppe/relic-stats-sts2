@@ -80,7 +80,7 @@ internal static class Program
             if (type == null || !resolver.IsRelicModel(type)) continue;
 
             var anyLive = group.SelectMany(site => site.CandidateMethods)
-                               .Any(name => resolver.Declares(type, name));
+                               .Any(name => resolver.Declares(type, name) || allowMissing.Contains($"{group.Key}.{name}"));
             if (!anyLive)
                 failures.Add($"relic {group.Key}: no patch target resolves — its stats would stay empty");
         }

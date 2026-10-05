@@ -18,6 +18,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Runs;
+using RelicStats.Patches;
 using RelicStats.Core;
 #if DEBUG
 using RelicStats.Core.Testing;
@@ -31,7 +32,7 @@ namespace RelicStats.Relics;
 [HarmonyPatch(typeof(BagOfPreparation), nameof(BagOfPreparation.ModifyHandDraw))]
 public sealed class BagOfPreparationStats : SimpleCounterStats<BagOfPreparation>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BagOfPreparation __instance, Player player, decimal __result, decimal __1)
     {
@@ -60,7 +61,7 @@ public sealed class BagOfPreparationStats : SimpleCounterStats<BagOfPreparation>
 [HarmonyPatch(typeof(BigMushroom), nameof(BigMushroom.ModifyHandDraw))]
 public sealed class BigMushroomStats : SimpleCounterStats<BigMushroom>
 {
-    public override string Format => "Drew {0} fewer cards.";
+    public override string Format => "Removed {0} cards from the turn-start draw request.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BigMushroom __instance, Player player, decimal __result, decimal __1)
     {
@@ -89,7 +90,7 @@ public sealed class BigMushroomStats : SimpleCounterStats<BigMushroom>
 [HarmonyPatch(typeof(BoomingConch), nameof(BoomingConch.ModifyHandDraw))]
 public sealed class BoomingConchStats : SimpleCounterStats<BoomingConch>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BoomingConch __instance, Player player, decimal __result, decimal __1)
     {
@@ -118,7 +119,7 @@ public sealed class BoomingConchStats : SimpleCounterStats<BoomingConch>
 [HarmonyPatch]
 public sealed class FiddleStats : SimpleCounterStats<Fiddle>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
 
     // Renamed in 0.110; both take (Player, decimal count), so one postfix covers either.
     public static IEnumerable<MethodBase> TargetMethods() =>
@@ -152,7 +153,7 @@ public sealed class FiddleStats : SimpleCounterStats<Fiddle>
 [HarmonyPatch(typeof(PaelsBlood), nameof(PaelsBlood.ModifyHandDraw))]
 public sealed class PaelsBloodStats : SimpleCounterStats<PaelsBlood>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public static void Postfix(PaelsBlood __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -180,7 +181,7 @@ public sealed class PaelsBloodStats : SimpleCounterStats<PaelsBlood>
 [HarmonyPatch(typeof(RingOfTheDrake), nameof(RingOfTheDrake.ModifyHandDraw))]
 public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public override StatCadence Cadence => StatCadence.Combat;
     public static void Postfix(RingOfTheDrake __instance, Player player, decimal __result, decimal __1)
     {
@@ -209,7 +210,7 @@ public sealed class RingOfTheDrakeStats : SimpleCounterStats<RingOfTheDrake>
 [HarmonyPatch(typeof(RingOfTheSnake), nameof(RingOfTheSnake.ModifyHandDraw))]
 public sealed class RingOfTheSnakeStats : SimpleCounterStats<RingOfTheSnake>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RingOfTheSnake __instance, Player player, decimal __result, decimal __1)
     {
@@ -236,18 +237,43 @@ public sealed class RingOfTheSnakeStats : SimpleCounterStats<RingOfTheSnake>
 
 // ── Retention relics ───────────────────────────────────────────────────
 
+public abstract class RetainedCardStats<TRelic> : SimpleCounterStats<TRelic> where TRelic : RelicModel
+{
+    public int CardsRetained { get; set; }
+    private bool _changedDuringRun;
+    public override string Format => "Preserved {0} otherwise-discardable cards.";
+    public override string GetDescription(int turns, int combats)
+    {
+        var text = string.Format(Format, Fmt.Blue(CardsRetained));
+        if (_changedDuringRun)
+            return text + "\nMeasured since update.\nEarlier hand-flush vetoes: " + Fmt.Blue(Amount) + ".";
+        if (Cadence == StatCadence.Turn)
+            text += "\nPer turn: " + Fmt.Blue(((float)CardsRetained / Math.Max(turns, 1)).ToString("0.###", CultureInfo.InvariantCulture));
+        if (Cadence != StatCadence.Total)
+            text += "\nPer combat: " + Fmt.Blue(((float)CardsRetained / Math.Max(combats, 1)).ToString("0.###", CultureInfo.InvariantCulture));
+        return text;
+    }
+    public override JsonObject Save() { var data = base.Save(); data["retainedCards"] = CardsRetained; data["changedDuringRun"] = _changedDuringRun; return data; }
+    public override void Load(JsonObject data) { base.Load(data); CardsRetained = data["retainedCards"]?.GetValue<int>() ?? 0; _changedDuringRun = data["changedDuringRun"]?.GetValue<bool>() ?? data["retainedCards"] == null; }
+    public override void Reset() { base.Reset(); CardsRetained = 0; _changedDuringRun = false; }
+    internal static void CountRetained(TRelic relic) => Track(relic, stats =>
+    {
+        ((RetainedCardStats<TRelic>)stats).CardsRetained +=
+            PileType.Hand.GetPile(relic.Owner).Cards.Count(card => !card.ShouldRetainThisTurn);
+    });
+}
+
 // RingingTriangle: retains hand turn 1 only
 [HarmonyPatch(typeof(RingingTriangle), nameof(RingingTriangle.ShouldFlush))]
-public sealed class RingingTriangleStats : SimpleCounterStats<RingingTriangle>
+public sealed class RingingTriangleStats : RetainedCardStats<RingingTriangle>
 {
-    public override string Format => "Retained hand {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(RingingTriangle __instance, Player player, bool __result)
     {
         // ShouldFlush returns false when retaining
         if (__result) return;
         if (player != __instance.Owner) return;
-        Track(__instance, s => s.Amount++);
+        CountRetained(__instance);
     }
 
 #if DEBUG
@@ -260,18 +286,19 @@ public sealed class RingingTriangleStats : SimpleCounterStats<RingingTriangle>
         {
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
+            TestHelpers.DiscardHand();
             TestHelpers.SpawnCard("STRIKE");
             TestHelpers.SpawnCard("DEFEND");
             TestHelpers.EndTurn();
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("retained the turn-1 hand once", () =>
-            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+            new TestResult(CardsRetained == 2, $"expected 2, got {CardsRetained}"));
         // ShouldFlush only returns false on turn 1; the turn-2 flush must not count.
         runner.Do("end turn 2", () => TestHelpers.EndTurn());
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("no retention from turn 2 on", () =>
-            new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
+            new TestResult(CardsRetained == 2, $"expected still 2, got {CardsRetained}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -279,39 +306,52 @@ public sealed class RingingTriangleStats : SimpleCounterStats<RingingTriangle>
 
 // RunicPyramid: retains hand every turn
 [HarmonyPatch(typeof(RunicPyramid), nameof(RunicPyramid.ShouldFlush))]
-public sealed class RunicPyramidStats : SimpleCounterStats<RunicPyramid>
+public sealed class RunicPyramidStats : RetainedCardStats<RunicPyramid>
 {
-    public override string Format => "Retained hand {0} times.";
     public static void Postfix(RunicPyramid __instance, Player player, bool __result)
     {
         if (__result) return;
         if (player != __instance.Owner) return;
-        Track(__instance, s => s.Amount++);
+        CountRetained(__instance);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        runner.Assert("legacy retention counts have no new measurement rates", () =>
+        {
+            var migrated = new RunicPyramidStats();
+            migrated.Load(new JsonObject { ["amount"] = 8 });
+            migrated.CardsRetained = 3;
+            var restored = new RunicPyramidStats();
+            restored.Load(migrated.Save());
+            var text = restored.GetDescription(20, 10);
+            return new TestResult(restored.Amount == 8 && restored.CardsRetained == 3 &&
+                text.Contains("Measured since update") && text.Contains("Earlier hand-flush vetoes") &&
+                !text.Contains("Per combat") && !text.Contains("Per turn"),
+                "expected retained cards separated from old vetoes without historical denominators");
+        });
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("nothing retained before the first flush", () =>
-            new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+            new TestResult(CardsRetained == 0, $"expected 0, got {CardsRetained}"));
         runner.Do("spawn cards and end turn 1", () =>
         {
             TestHelpers.EnableGodMode();
             TestHelpers.ProtectEnemy();
+            TestHelpers.DiscardHand();
             TestHelpers.SpawnCard("STRIKE");
             TestHelpers.SpawnCard("DEFEND");
             TestHelpers.EndTurn();
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("retained once after turn 1", () =>
-            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+            new TestResult(CardsRetained == 2, $"expected 2, got {CardsRetained}"));
         runner.Do("end turn 2", () => TestHelpers.EndTurn());
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("retained again after turn 2", () =>
-            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+            new TestResult(CardsRetained == 4, $"expected 4, got {CardsRetained}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -325,9 +365,9 @@ public sealed class OrangeDoughStats : SimpleCounterStats<OrangeDough>
 {
     public override string Format => "Added {0} colorless cards.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(OrangeDough __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(OrangeDough __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
     }
@@ -441,68 +481,77 @@ public sealed class NinjaScrollStats : SimpleCounterStats<NinjaScroll>
 // CentennialPuzzle: draws cards on first unblocked hit per combat
 // We use a Prefix to capture UsedThisCombat before the original method sets it to true.
 [HarmonyPatch(typeof(CentennialPuzzle), nameof(CentennialPuzzle.AfterDamageReceived))]
-public sealed class CentennialPuzzleStats : SimpleCounterStats<CentennialPuzzle>
+public sealed class CentennialPuzzleStats : MeasuredCounterStats<CentennialPuzzle>
 {
+    protected override string PreviousMeasurement => "requested draws";
     public override string Format => "Drew {0} cards on hit.";
     public override StatCadence Cadence => StatCadence.Total;
 
-    [ThreadStatic] private static bool _wasUsed;
+    internal static void Prefix(CentennialPuzzle __instance, out DirectDrawScope __state) =>
+        __state = DirectDrawScope.Begin(__instance.Owner,
+            count => Track(__instance, s => s.Amount += count), firstOnly: false);
 
-    public static void Prefix(CentennialPuzzle __instance)
-    {
-        _wasUsed = __instance.UsedThisCombat;
-    }
-
-    public static void Postfix(CentennialPuzzle __instance, Creature target,
-        DamageResult result)
-    {
-        if (target != __instance.Owner.Creature) return;
-        if (result.UnblockedDamage <= 0) return;
-        if (_wasUsed) return;
-        if (!CombatManager.Instance.IsInProgress) return;
-        Track(__instance, s => s.Amount += (int)__instance.DynamicVars.Cards.BaseValue);
-    }
+    internal static void Finalizer(DirectDrawScope __state) => __state.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        runner.Assert("old requests remain separate after save/load", () =>
+        {
+            var migrated = new CentennialPuzzleStats();
+            migrated.Load(new JsonObject { ["amount"] = 9 });
+            migrated.Amount = 2;
+            var restored = new CentennialPuzzleStats();
+            restored.Load(migrated.Save());
+            return new TestResult(restored.Amount == 2 && restored.Save()["previousAmount"]?.GetValue<int>() == 9 &&
+                restored.GetDescription(10, 3).Contains("Earlier requested draws"),
+                "expected completed draw total 2 and preserved earlier request total 9");
+        });
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Do("end turn to let enemy attack", () => { TestHelpers.Heal(999); TestHelpers.EndTurn(); });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked cards drawn", () => {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = (int)(relic?.DynamicVars.Cards.BaseValue ?? -1);
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        runner.Do("seed three cards and take an unblocked hit", () =>
+        {
+            TestHelpers.ProtectEnemy();
+            for (int i = 0; i < 3; i++) TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.DealDamageToPlayer(5);
         });
-        // UsedThisCombat is set on the first unblocked hit; a second hit in the same combat is ignored.
-        runner.Do("end turn again to take a second hit", () => { TestHelpers.Heal(999); TestHelpers.EndTurn(); });
-        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("no increment on a second hit", () => {
-            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
-            var expected = (int)(relic?.DynamicVars.Cards.BaseValue ?? -1);
-            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+        runner.WaitFor(GameEvent.DamageReceived);
+        runner.WaitUntil("all three direct draws complete", () => Amount == 3);
+        runner.Assert("three sequential draws each count", () => new TestResult(Amount == 3, $"expected 3, got {Amount}"));
+        runner.Do("take a second hit", () => TestHelpers.DealDamageToPlayer(5));
+        runner.WaitFor(GameEvent.DamageReceived);
+        runner.Assert("puzzle is used once per combat", () => new TestResult(Amount == 3, $"expected 3, got {Amount}"));
+        runner.Do("replace puzzle and prevent its draws with Fiddle", () =>
+        {
+            TestHelpers.RemoveRelic(RelicId);
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.AddRelic("FIDDLE");
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.DealDamageToPlayer(5);
         });
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.WaitFor(GameEvent.DamageReceived);
+        runner.WaitUntil("the prevented puzzle trigger is used", () => TestHelpers.GetRelic<CentennialPuzzle>()!.UsedThisCombat);
+        runner.Assert("a real blocked trigger credits zero cards", () =>
+            new TestResult(Amount == 3 && TestHelpers.GetRelic<CentennialPuzzle>()!.UsedThisCombat,
+                $"expected unchanged 3 and a used puzzle, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic("FIDDLE"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
+
 #endif
 }
 
 // UnceasingTop: draws a card when hand empties
 [HarmonyPatch(typeof(UnceasingTop), nameof(UnceasingTop.AfterHandEmptied))]
-public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
+public sealed class UnceasingTopStats : MeasuredCounterStats<UnceasingTop>
 {
+    protected override string PreviousMeasurement => "requested draws";
     public override string Format => "Drew {0} cards from empty hand.";
-    public static void Postfix(UnceasingTop __instance, Player player)
-    {
-        if (player != __instance.Owner) return;
-        // Mirror the relic's own guard: it only draws during AutoPrePlay/Play/AutoPostPlay
-        // (skips Start/End so an autoplay-emptied hand doesn't always trigger a draw).
-        var phase = player.PlayerCombatState!.Phase;
-        if (phase != PlayerTurnPhase.AutoPrePlay && phase != PlayerTurnPhase.Play && phase != PlayerTurnPhase.AutoPostPlay) return;
-        Track(__instance, s => s.Amount++);
-    }
+    internal static void Prefix(UnceasingTop __instance, Player player, out DirectDrawScope? __state) =>
+        __state = player == __instance.Owner
+            ? DirectDrawScope.Begin(player, count => Track(__instance, s => s.Amount += count)) : null;
+
+    internal static void Finalizer(DirectDrawScope? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -525,6 +574,7 @@ public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
         // CheckForEmptyHand, and at turn 2 the hand draw reshuffles the STRIKE in again, so the
         // auto-pre-play check sees a non-empty hand. Asserting at PlayerTurnStart (before that
         // check) also keeps the count independent of the reshuffle.
+        runner.WaitUntil("the empty-hand draw completes", () => Amount == 1, 15000);
         runner.Assert("tracked one draw from the emptied hand", () =>
             new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         // Negative: a card kept in hand through turn 2 means neither the auto-pre-play check nor
@@ -539,45 +589,68 @@ public sealed class UnceasingTopStats : SimpleCounterStats<UnceasingTop>
 }
 
 // GamblingChip: discards and redraws cards turn 1
-// Two patches work together: the Prefix on AfterPlayerTurnStart sets a flag with the relic
-// instance, and the Prefix on CardCmd.DiscardAndDraw checks that flag to track the actual
-// number of cards swapped (not just that the effect triggered).
+// Selected cards are credited only when the game records their actual discard.
 [HarmonyPatch(typeof(GamblingChip), nameof(GamblingChip.AfterPlayerTurnStart))]
 public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
 {
-    public override string Format => "Swapped {0} cards.";
+    public override string Format => "Discarded {0} selected cards.";
     public override StatCadence Cadence => StatCadence.Combat;
-    internal static GamblingChip? ActiveInstance;
+    public int CardsDiscarded { get; set; }
+    private bool _changedDuringRun;
 
-    public static void Prefix(GamblingChip __instance, Player player)
+    protected override string FormatStat(int amount) => base.FormatStat(CardsDiscarded);
+    public override string GetDescription(int effectiveTurns, int effectiveCombats)
     {
-        if (player != __instance.Owner) return;
-        if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
-        ActiveInstance = __instance;
+        var text = $"Discarded {Fmt.Blue(CardsDiscarded)} selected cards.";
+        if (_changedDuringRun)
+            return text + "\nMeasured since update.\nEarlier replacement draw requests: " + Fmt.Blue(Amount) + ".";
+        return text + "\nPer combat: " +
+            Fmt.Blue(((float)CardsDiscarded / Math.Max(effectiveCombats, 1)).ToString("0.###", CultureInfo.InvariantCulture));
     }
+    public override JsonObject Save()
+    {
+        var data = base.Save();
+        data["discardedCards"] = CardsDiscarded;
+        data["changedDuringRun"] = _changedDuringRun;
+        return data;
+    }
+    public override void Load(JsonObject data)
+    {
+        base.Load(data);
+        CardsDiscarded = data["discardedCards"]?.GetValue<int>() ?? 0;
+        _changedDuringRun = data["changedDuringRun"]?.GetValue<bool>() ?? data["discardedCards"] == null;
+    }
+    public override void Reset() { base.Reset(); CardsDiscarded = 0; _changedDuringRun = false; }
 
-    // The relic's AfterPlayerTurnStart awaits the discard prompt and only calls
-    // CardCmd.DiscardAndDraw when at least one card was picked. Clearing the flag solely in the
-    // DiscardAndDraw prefix therefore leaks it on a pick of 0 cards, and the next DiscardAndDraw from
-    // any source (a card, a potion) would be credited to the chip. A plain Postfix cannot clear it
-    // either: on an async method it runs when the method first yields, i.e. while the prompt is
-    // still open. Wrapping the returned Task instead ties the flag's lifetime exactly to the
-    // method's own: it is cleared when the relic's turn-start work completes, for 0 or N cards.
-    public static void Postfix(GamblingChip __instance, ref Task __result)
-    {
-        if (ActiveInstance != __instance) return;
-        __result = ClearWhenDone(__result);
-    }
+    internal static void Prefix(GamblingChip __instance, Player player, out ChipDiscardScope? __state) =>
+        __state = player == __instance.Owner && player.PlayerCombatState!.TurnNumber <= 1
+            ? ChipDiscardScope.Begin(player, () =>
+            {
+                if (__instance.IsMelted || !LocalContext.IsMine(__instance)) return;
+                if (RelicStatsRegistry.Get(RelicIdHelper.Slugify(nameof(GamblingChip))) is GamblingChipStats stats)
+                    stats.CardsDiscarded++;
+            }) : null;
 
-    private static async Task ClearWhenDone(Task inner)
-    {
-        try { await inner; }
-        finally { ActiveInstance = null; }
-    }
+    internal static void Finalizer(ChipDiscardScope? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
+        Task? lethalDiscard = null;
+        CardModel[] lethalSelected = Array.Empty<CardModel>();
+        runner.Assert("legacy replacement requests have no new discard rates", () =>
+        {
+            var migrated = new GamblingChipStats();
+            migrated.Load(new JsonObject { ["amount"] = 8 });
+            migrated.CardsDiscarded = 3;
+            var restored = new GamblingChipStats();
+            restored.Load(migrated.Save());
+            var text = restored.GetDescription(20, 10);
+            return new TestResult(restored.Amount == 8 && restored.CardsDiscarded == 3 &&
+                text.Contains("Measured since update") && text.Contains("Earlier replacement draw requests") &&
+                !text.Contains("Per combat"),
+                "expected actual discards separated from old requests without historical denominators");
+        });
         // The chip prompts at turn-1 start, so the hand must already hold cards then. The deck is
         // cleared before every test, so Ninja Scroll (BeforeHandDraw, which runs before
         // AfterPlayerTurnStart in SetupPlayerTurn) supplies 3 Shivs; the auto selector picks all of
@@ -590,11 +663,12 @@ public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
         });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.CardDiscarded, 15000);
-        runner.Assert("tracked the swapped Shivs", () =>
+        runner.WaitUntil("all three selected Shivs are discarded", () => CardsDiscarded == 3, 15000);
+        runner.Assert("tracked the discarded selected Shivs", () =>
         {
             var scroll = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == "NINJA_SCROLL");
             var expected = scroll?.DynamicVars["Shivs"].IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+            return new TestResult(expected > 0 && CardsDiscarded == expected, $"expected {expected}, got {CardsDiscarded}");
         });
         // The chip only prompts on turn 1; turn 2 must not add anything.
         runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
@@ -603,12 +677,44 @@ public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
         {
             var scroll = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == "NINJA_SCROLL");
             var expected = scroll?.DynamicVars["Shivs"].IntValue ?? -1;
-            return new TestResult(expected > 0 && Amount == expected, $"expected still {expected}, got {Amount}");
+            return new TestResult(expected > 0 && CardsDiscarded == expected, $"expected still {expected}, got {CardsDiscarded}");
         });
+        runner.Do("remove opening relics for controlled lethal test", () =>
+        {
+            TestHelpers.RemoveRelic("NINJA_SCROLL");
+            TestHelpers.RemoveRelic(RelicId);
+        });
+        runner.Do("start an empty first turn", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Do("discard three selected cards with lethal Tingsha", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.AddRelic("TINGSHA");
+            foreach (var enemy in TestHelpers.Player!.Creature.CombatState!.HittableEnemies)
+            {
+                enemy.RemoveAllPowersInternalExcept();
+                enemy.LoseBlockInternal(enemy.Block);
+                enemy.SetCurrentHpInternal(1);
+            }
+            TestHelpers.DiscardHand();
+            for (int i = 0; i < 3; i++) TestHelpers.SpawnCard("STRIKE_IRONCLAD");
+            lethalSelected = PileType.Hand.GetPile(TestHelpers.Player!).Cards.ToArray();
+            lethalDiscard = TestHelpers.GetRelic<GamblingChip>()!.AfterPlayerTurnStart(
+                new ThrowingPlayerChoiceContext(), TestHelpers.Player!);
+        });
+        runner.WaitUntil("lethal selected-card discard resolves", () =>
+        {
+            if (lethalDiscard?.IsFaulted == true) throw lethalDiscard.Exception!;
+            return lethalDiscard?.IsCompletedSuccessfully == true;
+        }, 15000);
+        runner.Assert("failed post-lethal moves do not count", () =>
+            new TestResult(CardsDiscarded == 4 && lethalSelected.Count(card => card.Pile?.Type == PileType.Hand) == 2,
+                $"expected total 4 completed discards and two cards still in Hand, got {CardsDiscarded}/" +
+                lethalSelected.Count(card => card.Pile?.Type == PileType.Hand)));
         runner.Cleanup(() =>
         {
             TestHelpers.PopCardSelector();
-            ActiveInstance = null;
+            TestHelpers.RemoveRelic("TINGSHA");
             TestHelpers.RemoveRelic("NINJA_SCROLL");
             TestHelpers.RemoveRelic(RelicId);
             Reset();
@@ -617,33 +723,19 @@ public sealed class GamblingChipStats : SimpleCounterStats<GamblingChip>
 #endif
 }
 
-[HarmonyPatch(typeof(CardCmd), nameof(CardCmd.DiscardAndDraw))]
-public static class GamblingChipDiscardAndDrawPatch
-{
-    public static void Prefix(int cardsToDraw)
-    {
-        var instance = GamblingChipStats.ActiveInstance;
-        if (instance == null) return;
-        GamblingChipStats.ActiveInstance = null;
-        if (cardsToDraw <= 0) return;
-        SimpleCounterStats<GamblingChip>.Track(instance, s => s.Amount += cardsToDraw);
-    }
-}
-
 // Bookmark: reduces cost of a random retained card after a flush
 [HarmonyPatch(typeof(Bookmark), nameof(Bookmark.AfterFlush))]
 public sealed class BookmarkStats : SimpleCounterStats<Bookmark>
 {
     public override string Format => "Reduced card costs {0} times.";
-    public static void Postfix(Bookmark __instance, Player player, IReadOnlyCollection<CardModel> retainedCards)
-    {
-        if (player != __instance.Owner) return;
-        // The original only acts when there's at least one retained card with a fixed cost > 0.
-        // We replicate the check to avoid false positives.
-        bool anyEligible = retainedCards.Any(
+    public static void Prefix(Bookmark __instance, Player player,
+        IReadOnlyCollection<CardModel> retainedCards, out bool __state) =>
+        __state = player == __instance.Owner && retainedCards.Any(
             c => !c.EnergyCost.CostsX && c.EnergyCost.GetWithModifiers(CostModifiers.Local) > 0);
-        if (!anyEligible) return;
-        Track(__instance, s => s.Amount++);
+
+    public static void Postfix(Bookmark __instance, bool __state)
+    {
+        if (__state) Track(__instance, s => s.Amount++);
     }
 
 #if DEBUG
@@ -652,6 +744,7 @@ public sealed class BookmarkStats : SimpleCounterStats<Bookmark>
         // AfterFlush receives the retained cards; the relic acts only when one of them has a fixed
         // cost > 0. Without Retain the STRIKE is flushed (negative); with Runic Pyramid, ShouldFlush
         // is false so the whole hand is retained and the cost-1 STRIKE qualifies.
+        CardModel? reducedCard = null;
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
@@ -668,12 +761,15 @@ public sealed class BookmarkStats : SimpleCounterStats<Bookmark>
         runner.Do("add Runic Pyramid, spawn a card and end turn", () =>
         {
             TestHelpers.AddRelic("RUNIC_PYRAMID");
-            TestHelpers.SpawnCard("STRIKE");
+            PileType.Hand.GetPile(TestHelpers.Player!).Clear(silent: true);
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD");
+            reducedCard = PileType.Hand.GetPile(TestHelpers.Player!).Cards.Single();
             TestHelpers.EndTurn();
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("reduced a retained card once", () =>
-            new TestResult(Amount == 1, $"expected 1, got {Amount}"));
+        runner.Assert("counted the sole retained card becoming free", () =>
+            new TestResult(Amount == 1 && reducedCard?.EnergyCost.GetWithModifiers(CostModifiers.Local) == 0,
+                $"expected one 1-to-0 reduction, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic("RUNIC_PYRAMID"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -685,7 +781,7 @@ public sealed class BookmarkStats : SimpleCounterStats<Bookmark>
 [HarmonyPatch(typeof(Pocketwatch), nameof(Pocketwatch.ModifyHandDraw))]
 public sealed class PocketwatchStats : SimpleCounterStats<Pocketwatch>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public static void Postfix(Pocketwatch __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -731,7 +827,7 @@ public sealed class PocketwatchStats : SimpleCounterStats<Pocketwatch>
 [HarmonyPatch(typeof(PollinousCore), nameof(PollinousCore.ModifyHandDraw))]
 public sealed class PollinousCoreStats : SimpleCounterStats<PollinousCore>
 {
-    public override string Format => "Drew {0} additional cards.";
+    public override string Format => "Requested {0} extra cards from turn-start draw.";
     public static void Postfix(PollinousCore __instance, Player player, decimal __result, decimal __1)
     {
         if (__result <= __1) return;
@@ -778,6 +874,8 @@ public sealed class SneckoEyeStats : IRelicStats
     public int Cost2 { get; set; }
     public int Cost3 { get; set; }
     public int TotalDiscount { get; set; }
+    private int _previousCost0, _previousCost1, _previousCost2, _previousCost3, _previousDiscount;
+    private bool _hasPreviousMeasurement;
 
     public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
@@ -786,11 +884,19 @@ public sealed class SneckoEyeStats : IRelicStats
             ? ((float)TotalDiscount / totalCards).ToString("0.##", CultureInfo.InvariantCulture)
             : "0";
 
-        return $"Drew {Fmt.Blue(CardsDrawn)} additional cards.\n" +
-               $"Card cost counts:\n" +
+        var text = $"Requested {Fmt.Blue(CardsDrawn)} extra cards from turn-start draw.\n" +
+               $"Assigned roll counts (fixed-cost cards):\n" +
                $"  0 energy: {Fmt.Blue(Cost0)}  1 energy: {Fmt.Blue(Cost1)}\n" +
                $"  2 energy: {Fmt.Blue(Cost2)}  3 energy: {Fmt.Blue(Cost3)}\n" +
-               $"Average discount: {Fmt.Blue(avgDiscount)}";
+               $"Average roll discount vs upgraded base cost: {Fmt.Blue(avgDiscount)}";
+        if (_hasPreviousMeasurement)
+        {
+            text += "\nRoll measurements recorded since update.\n" +
+                    $"Earlier resolved cost counts (including X): 0={Fmt.Blue(_previousCost0)}, 1={Fmt.Blue(_previousCost1)}, " +
+                    $"2={Fmt.Blue(_previousCost2)}, 3+={Fmt.Blue(_previousCost3)}.\n" +
+                    $"Earlier canonical-cost discount total: {Fmt.Blue(_previousDiscount)}.";
+        }
+        return text;
     }
 
     public JsonObject Save()
@@ -798,9 +904,14 @@ public sealed class SneckoEyeStats : IRelicStats
         var obj = new JsonObject
         {
             ["cardsDrawn"] = CardsDrawn,
-            ["cost0"] = Cost0, ["cost1"] = Cost1,
-            ["cost2"] = Cost2, ["cost3"] = Cost3,
-            ["totalDiscount"] = TotalDiscount,
+            ["roll0"] = Cost0, ["roll1"] = Cost1,
+            ["roll2"] = Cost2, ["roll3"] = Cost3,
+            ["rollDiscount"] = TotalDiscount,
+            ["rollMeasurementVersion"] = 1,
+            ["hasPreviousMeasurement"] = _hasPreviousMeasurement,
+            ["cost0"] = _previousCost0, ["cost1"] = _previousCost1,
+            ["cost2"] = _previousCost2, ["cost3"] = _previousCost3,
+            ["totalDiscount"] = _previousDiscount,
         };
         return obj;
     }
@@ -808,11 +919,18 @@ public sealed class SneckoEyeStats : IRelicStats
     public void Load(JsonObject data)
     {
         CardsDrawn = data["cardsDrawn"]?.GetValue<int>() ?? 0;
-        Cost0 = data["cost0"]?.GetValue<int>() ?? 0;
-        Cost1 = data["cost1"]?.GetValue<int>() ?? 0;
-        Cost2 = data["cost2"]?.GetValue<int>() ?? 0;
-        Cost3 = data["cost3"]?.GetValue<int>() ?? 0;
-        TotalDiscount = data["totalDiscount"]?.GetValue<int>() ?? 0;
+        Cost0 = data["roll0"]?.GetValue<int>() ?? 0;
+        Cost1 = data["roll1"]?.GetValue<int>() ?? 0;
+        Cost2 = data["roll2"]?.GetValue<int>() ?? 0;
+        Cost3 = data["roll3"]?.GetValue<int>() ?? 0;
+        TotalDiscount = data["rollDiscount"]?.GetValue<int>() ?? 0;
+        _previousCost0 = data["cost0"]?.GetValue<int>() ?? 0;
+        _previousCost1 = data["cost1"]?.GetValue<int>() ?? 0;
+        _previousCost2 = data["cost2"]?.GetValue<int>() ?? 0;
+        _previousCost3 = data["cost3"]?.GetValue<int>() ?? 0;
+        _previousDiscount = data["totalDiscount"]?.GetValue<int>() ?? 0;
+        _hasPreviousMeasurement = data["hasPreviousMeasurement"]?.GetValue<bool>() ??
+            (data["rollMeasurementVersion"] == null && data["cost0"] != null);
     }
 
     public void Reset()
@@ -820,6 +938,8 @@ public sealed class SneckoEyeStats : IRelicStats
         CardsDrawn = 0;
         Cost0 = Cost1 = Cost2 = Cost3 = 0;
         TotalDiscount = 0;
+        _previousCost0 = _previousCost1 = _previousCost2 = _previousCost3 = _previousDiscount = 0;
+        _hasPreviousMeasurement = false;
     }
 
     public static SneckoEyeStats? GetFor(SneckoEye instance)
@@ -832,6 +952,21 @@ public sealed class SneckoEyeStats : IRelicStats
 #if DEBUG
     public void RegisterTest(TestRunner runner)
     {
+        runner.Assert("old cost measurements survive save/load separately", () =>
+        {
+            var migrated = new SneckoEyeStats();
+            migrated.Load(new JsonObject { ["cardsDrawn"] = 8, ["cost0"] = 1, ["cost1"] = 2,
+                ["cost2"] = 3, ["cost3"] = 4, ["totalDiscount"] = 7 });
+            migrated.Cost2 = 1;
+            var restored = new SneckoEyeStats();
+            restored.Load(migrated.Save());
+            var saved = restored.Save();
+            return new TestResult(restored.CardsDrawn == 8 && restored.Cost0 == 0 && restored.Cost2 == 1 &&
+                restored.TotalDiscount == 0 && saved["cost3"]?.GetValue<int>() == 4 &&
+                saved["totalDiscount"]?.GetValue<int>() == 7 &&
+                restored.GetDescription(10, 3).Contains("recorded since update"),
+                "expected independent new roll measurements and preserved old bins/discount");
+        });
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
@@ -880,52 +1015,46 @@ public static class SneckoEyeDrawPatch
     nameof(ConfusedPower.AfterCardDrawn))]
 public static class SneckoEyeConfusionPatch
 {
-    public static void Postfix(ConfusedPower __instance,
-        PlayerChoiceContext choiceContext, CardModel card, bool fromHandDraw)
+    public static void Prefix(ConfusedPower __instance, CardModel card, out int __state)
     {
-        if (card.Owner == null) return;
-        if (card.Owner != __instance.Owner.Player) return;
+        __state = card.Owner == __instance.Owner.Player && !card.EnergyCost.CostsX
+            ? card.EnergyCost.GetWithModifiers(CostModifiers.None) : -1;
+    }
 
-        var sneckoEye = card.Owner.GetRelic<SneckoEye>();
-        if (sneckoEye == null) return;
-
-        var stats = SneckoEyeStats.GetFor(sneckoEye);
+    public static void Postfix(ConfusedPower __instance, CardModel card, int __state)
+    {
+        if (__state < 0 || card.Owner != __instance.Owner.Player) return;
+        var relic = card.Owner.GetRelic<SneckoEye>();
+        if (relic == null) return;
+        var stats = SneckoEyeStats.GetFor(relic);
         if (stats == null) return;
-
-        int originalCost = card.EnergyCost.Canonical;
-        if (originalCost < 0) return;
-
-        int newCost = card.EnergyCost.GetResolved();
-        if (newCost < 0) return;
-
-        // Track per-cost-tier
-        switch (newCost)
+        int roll = card.EnergyCost.GetWithModifiers(CostModifiers.Local);
+        if (!RelicMeasurementMath.TryRollDiscount(card.EnergyCost.CostsX, __state, roll, out int discount)) return;
+        switch (roll)
         {
             case 0: stats.Cost0++; break;
             case 1: stats.Cost1++; break;
             case 2: stats.Cost2++; break;
-            default: stats.Cost3++; break;
+            case 3: stats.Cost3++; break;
         }
-
-        // Track discount (positive = saved energy, negative = cost more)
-        stats.TotalDiscount += originalCost - newCost;
+        stats.TotalDiscount += discount;
     }
+
 }
 
 // ── Draw-on-play-count relics ─────────────────────────────────────────
 
 // IronClub: draws 1 card every 4 cards played
 [HarmonyPatch(typeof(IronClub), nameof(IronClub.AfterCardPlayed))]
-public sealed class IronClubStats : SimpleCounterStats<IronClub>
+public sealed class IronClubStats : MeasuredCounterStats<IronClub>
 {
+    protected override string PreviousMeasurement => "requested draws";
     public override string Format => "Drew {0} cards.";
-    public static void Postfix(IronClub __instance, CardPlay cardPlay)
-    {
-        if (cardPlay.Card.Owner != __instance.Owner) return;
-        if (__instance.CardsPlayed % __instance.DynamicVars.Cards.IntValue != 0) return;
-        if (!CombatManager.Instance.IsInProgress) return;
-        Track(__instance, s => s.Amount++);
-    }
+    internal static void Prefix(IronClub __instance, CardPlay cardPlay, out DirectDrawScope? __state) =>
+        __state = cardPlay.Card.Owner == __instance.Owner
+            ? DirectDrawScope.Begin(__instance.Owner, count => Track(__instance, s => s.Amount += count)) : null;
+
+    internal static void Finalizer(DirectDrawScope? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -950,6 +1079,7 @@ public sealed class IronClubStats : SimpleCounterStats<IronClub>
             new TestResult(Amount == 0, $"expected 0, got {Amount}"));
         runner.Do("play card 4", () => TestHelpers.PlayCard(0, 0));
         runner.WaitFor(GameEvent.CardPlayed);
+        runner.WaitUntil("the fourth-card draw completes", () => Amount == 1, 15000);
         runner.Assert("tracked the draw on the 4th play", () =>
             new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Do("play card 5", () => TestHelpers.PlayCard(0, 0));
@@ -964,38 +1094,40 @@ public sealed class IronClubStats : SimpleCounterStats<IronClub>
 // ── Draw-on-exhaust relics ────────────────────────────────────────────
 
 // JossPaper: draws cards every 5 exhausts
-[HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterCardExhausted))]
-public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
+[HarmonyPatch]
+public sealed class JossPaperStats : MeasuredCounterStats<JossPaper>
 {
+    protected override string PreviousMeasurement => "requested draws";
     public override string Format => "Drew {0} cards.";
 
-    // The game does CardsExhausted++, then DrawIfThresholdMet awaits CardPileCmd.Draw of
-    // CardsExhausted / ExhaustAmount cards and only afterwards wraps the counter. The Prefix decides
-    // from the pre-increment counter whether this exhaust reaches the threshold and captures the hand
-    // count (__state, -1 when it does not); the Postfix wraps the returned Task and counts the
-    // hand-size increase once the draw has completed, so an empty draw pile counts nothing.
-    public static void Prefix(JossPaper __instance, CardModel card, bool causedByEthereal, out int __state)
+    // Normal exhausts draw here; Ethereal exhausts are accumulated and draw at turn end.
+    [HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterCardExhausted))]
+    [HarmonyPrefix]
+    internal static void ExhaustPrefix(JossPaper __instance, CardModel card, bool causedByEthereal,
+        out DirectDrawScope? __state)
     {
-        __state = -1;
-        if (card.Owner != __instance.Owner) return;
-        if (causedByEthereal) return;
-        if (__instance.CardsExhausted + 1 < __instance.DynamicVars["ExhaustAmount"].IntValue) return;
-        __state = PileType.Hand.GetPile(__instance.Owner).Cards.Count;
+        __state = card.Owner == __instance.Owner && !causedByEthereal
+            ? BeginDraw(__instance) : null;
     }
 
-    public static void Postfix(JossPaper __instance, ref Task __result, int __state)
+    [HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterCardExhausted))]
+    [HarmonyFinalizer]
+    internal static void ExhaustFinished(DirectDrawScope? __state) => __state?.Dispose();
+
+    [HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterSideTurnEnd))]
+    [HarmonyPrefix]
+    internal static void TurnEndPrefix(JossPaper __instance, IEnumerable<Creature> participants,
+        out DirectDrawScope? __state)
     {
-        if (__state < 0) return;
-        __result = CountWhenDone(__instance, __result, __state);
+        __state = participants.Contains(__instance.Owner.Creature) ? BeginDraw(__instance) : null;
     }
 
-    private static async Task CountWhenDone(JossPaper relic, Task inner, int handBefore)
-    {
-        await inner;
-        int drawn = PileType.Hand.GetPile(relic.Owner).Cards.Count - handBefore;
-        if (drawn <= 0) return;
-        Track(relic, s => s.Amount += drawn);
-    }
+    [HarmonyPatch(typeof(JossPaper), nameof(JossPaper.AfterSideTurnEnd))]
+    [HarmonyFinalizer]
+    internal static void TurnEndFinished(DirectDrawScope? __state) => __state?.Dispose();
+
+    private static DirectDrawScope BeginDraw(JossPaper relic) =>
+        DirectDrawScope.Begin(relic.Owner, count => Track(relic, s => s.Amount += count));
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -1021,7 +1153,32 @@ public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
         runner.WaitUntil("the threshold draw completed", () => Amount > 0);
         runner.Assert("tracked one draw on the 5th exhaust", () =>
             new TestResult(Amount == 1, $"expected 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+
+        // Turn-end path: 3 normal exhausts leave the counter at 3; two Ethereal cards left in hand
+        // are exhausted by the turn-end flush (not counted there), and AfterSideTurnEnd adds them to
+        // reach 5 and draws one more card.
+        for (int i = 0; i < 3; i++)
+        {
+            runner.Do($"exhaust card {i + 6}", () => { TestHelpers.SpawnCard("STRIKE"); TestHelpers.ExhaustCard(); });
+            runner.WaitFor(GameEvent.CardExhausted);
+        }
+        runner.Do("keep two Ethereal cards in hand + end turn", () =>
+        {
+            TestHelpers.EnableGodMode();
+            TestHelpers.ProtectEnemy();
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            var hand = PileType.Hand.GetPile(TestHelpers.Player!);
+            for (int i = 0; i < 2; i++)
+            {
+                TestHelpers.SpawnCard("DEFEND_IRONCLAD");
+                CardCmd.ApplyKeyword(hand.Cards[hand.Cards.Count - 1], CardKeyword.Ethereal);
+            }
+            TestHelpers.EndTurn();
+        });
+        runner.WaitUntil("the turn-end draw completed", () => Amount > 1, 15000);
+        runner.Assert("the Ethereal exhausts completed the count and drew one", () =>
+            new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1030,22 +1187,15 @@ public sealed class JossPaperStats : SimpleCounterStats<JossPaper>
 
 // HistoryCourse: auto-replays last Attack/Skill from previous turn
 [HarmonyPatch(typeof(HistoryCourse), nameof(HistoryCourse.AfterAutoPrePlayPhaseEntered))]
-public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
+public sealed class HistoryCourseStats : MeasuredCounterStats<HistoryCourse>
 {
+    protected override string PreviousMeasurement => "replay attempts";
     public override string Format => "Auto-replayed {0} cards.";
-    public static void Postfix(HistoryCourse __instance, Player player)
-    {
-        if (player != __instance.Owner) return;
-        if (player.PlayerCombatState!.TurnNumber == 1) return;
-        // The relic only replays when its history lookup finds a non-dupe Attack the owner played
-        // last turn; a turn with nothing to replay must not count. Same expression as the game's.
-        var owner = __instance.Owner;
-        bool replayed = CombatManager.Instance.History.CardPlaysFinished.Any(
-            (CardPlayFinishedEntry e) => e.CardPlay.Player == owner && e.HappenedLastPlayerTurn(owner)
-                && e.CardPlay.Card.Type == CardType.Attack && !e.CardPlay.Card.IsDupe);
-        if (!replayed) return;
-        Track(__instance, s => s.Amount++);
-    }
+    internal static void Prefix(HistoryCourse __instance, Player player, out AutoPlayScope? __state) =>
+        __state = player == __instance.Owner && player.PlayerCombatState!.TurnNumber > 1
+            ? AutoPlayScope.Begin(player, () => Track(__instance, s => s.Amount++)) : null;
+
+    internal static void Finalizer(AutoPlayScope? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -1085,6 +1235,32 @@ public sealed class HistoryCourseStats : SimpleCounterStats<HistoryCourse>
 [HarmonyPatch(typeof(WhisperingEarring), nameof(WhisperingEarring.AfterAutoPrePlayPhaseEnteredLate))]
 public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarring>
 {
+    public int CardsAutoPlayed { get; set; }
+    public int EnergyGenerated { get; set; }
+    private bool _changedDuringRun;
+    public override string GetDescription(int effectiveTurns, int effectiveCombats) =>
+        $"Recorded {Fmt.Blue(CardsAutoPlayed)} cards auto-played. Recorded {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold] generated." +
+        (_changedDuringRun ? "\nActual effects measured since update." : "") +
+        $"\nTriggered {Fmt.Blue(Amount)} opening auto-play phases.";
+    public override JsonObject Save()
+    {
+        var data = base.Save(); data["autoPlayed"] = CardsAutoPlayed; data["energy"] = EnergyGenerated;
+        data["changedDuringRun"] = _changedDuringRun; return data;
+    }
+    public override void Load(JsonObject data)
+    {
+        base.Load(data); CardsAutoPlayed = data["autoPlayed"]?.GetValue<int>() ?? 0;
+        EnergyGenerated = data["energy"]?.GetValue<int>() ?? 0;
+        _changedDuringRun = data["changedDuringRun"]?.GetValue<bool>() ??
+            (data["autoPlayed"] == null || data["energy"] == null);
+    }
+    public override void Reset() { base.Reset(); CardsAutoPlayed = 0; EnergyGenerated = 0; _changedDuringRun = false; }
+    internal static void Prefix(WhisperingEarring __instance, Player player, out AutoPlayScope? __state) =>
+        __state = player == __instance.Owner && player.PlayerCombatState!.TurnNumber <= 1
+            ? AutoPlayScope.Begin(player, () => Track(__instance,
+                stats => ((WhisperingEarringStats)stats).CardsAutoPlayed++)) : null;
+    internal static void Finalizer(AutoPlayScope? __state) => __state?.Dispose();
+
     public override string Format => "Triggered {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(WhisperingEarring __instance, Player player)
@@ -1100,9 +1276,32 @@ public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarrin
         // AfterAutoPrePlayPhaseEnteredLate runs after PlayerTurnStart and before the Play phase, so
         // TurnEnd is the first sync point past it. Amount counts triggers (turn 1 only), not cards
         // played: with an empty hand it triggers and auto-plays nothing.
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Assert("legacy opening phases survive separately from actual effects", () =>
+        {
+            var migrated = new WhisperingEarringStats();
+            migrated.Load(new JsonObject { ["amount"] = 8 });
+            var restored = new WhisperingEarringStats();
+            restored.Load(migrated.Save());
+            return new TestResult(restored.Amount == 8 && restored.CardsAutoPlayed == 0 && restored.EnergyGenerated == 0 &&
+                restored.GetDescription(20, 10).Contains("measured since update"),
+                "expected earlier phase count 8 and independently recorded actual effects");
+        });
+        runner.Do("add relics and one Power to the deck", () =>
+        {
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.AddRelic("SPIKED_GAUNTLETS");
+            RelicStatsRegistry.Get(RelicIdHelper.Slugify(nameof(SpikedGauntlets)))?.Reset();
+            TestHelpers.AddCardToDeck("DEMON_FORM");
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.WaitUntil("Earring's real Power auto-play completes", () => CardsAutoPlayed == 1, 15000);
+        runner.Assert("actual auto-play and Energy benefit, including prepaid surcharge", () =>
+        {
+            var gauntlets = RelicStatsRegistry.Get(RelicIdHelper.Slugify(nameof(SpikedGauntlets))) as SpikedGauntletsStats;
+            return new TestResult(CardsAutoPlayed == 1 && EnergyGenerated == 1 && gauntlets?.PowerCostIncrease == 1,
+                $"expected one auto-play, one Earring Energy, and one prepaid surcharge; got {CardsAutoPlayed}/{EnergyGenerated}/{gauntlets?.PowerCostIncrease}");
+        });
         runner.Do("end turn 1", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
         runner.WaitFor(GameEvent.TurnEnd, 15000);
         runner.Assert("triggered once on turn 1", () =>
@@ -1112,7 +1311,7 @@ public sealed class WhisperingEarringStats : SimpleCounterStats<WhisperingEarrin
         runner.WaitFor(GameEvent.TurnEnd, 15000);
         runner.Assert("no trigger on turn 2", () =>
             new TestResult(Amount == 1, $"expected still 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { TestHelpers.RemoveRelic("SPIKED_GAUNTLETS"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1142,14 +1341,14 @@ public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("generate a reward in a triggering combat", () =>
         {
-            TestHelpers.GetRelic<LastingCandy>()!.CombatRewardsSeen = 1;
+            AccessTools.Property(typeof(LastingCandy), "CombatRewardsSeen")?.SetValue(TestHelpers.GetRelic<LastingCandy>(), 1);
             TestHelpers.GenerateCardReward();
         });
         runner.Assert("added a Power card once", () =>
             new TestResult(Amount == 1, $"expected 1, got {Amount}"));
         runner.Do("generate a reward in a non-triggering combat", () =>
         {
-            TestHelpers.GetRelic<LastingCandy>()!.CombatRewardsSeen = 2;
+            AccessTools.Property(typeof(LastingCandy), "CombatRewardsSeen")?.SetValue(TestHelpers.GetRelic<LastingCandy>(), 2);
             TestHelpers.GenerateCardReward();
         });
         runner.Assert("no card added on an even combat", () =>
@@ -1163,7 +1362,7 @@ public sealed class LastingCandyStats : SimpleCounterStats<LastingCandy>
 [HarmonyPatch(typeof(SilverCrucible), nameof(SilverCrucible.TryModifyCardRewardOptionsLate))]
 public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
 {
-    public override string Format => "Upgraded card rewards {0} times.";
+    public override string Format => "Processed {0} card reward upgrade batches.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(SilverCrucible __instance, Player player, bool __result)
     {
@@ -1204,3 +1403,14 @@ public sealed class SilverCrucibleStats : SimpleCounterStats<SilverCrucible>
 // ── New relics (0.109.0) ───────────────────────────────────────────────
 
 // NOTE: DowsingRod is a 0.108/0.109-beta-only relic; omitted so the mod loads on stable (0.107.1).
+
+[HarmonyPatch(typeof(WhisperingEarring), nameof(WhisperingEarring.ModifyMaxEnergy))]
+internal static class WhisperingEarringEnergyPatch
+{
+    public static void Postfix(WhisperingEarring __instance, decimal __result, decimal __1)
+    {
+        if (!EnergyGrantScope.IsCounting || __result <= __1) return;
+        SimpleCounterStats<WhisperingEarring>.Track(__instance,
+            stats => ((WhisperingEarringStats)stats).EnergyGenerated += (int)(__result - __1));
+    }
+}

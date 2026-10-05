@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -439,9 +440,10 @@ public sealed class MeatOnTheBoneStats : SimpleCounterStats<MeatOnTheBone>
 // for the Rest option's preview text, so the count is scoped to HealRestSiteOption.ExecuteRestSiteHeal,
 // which computes the real amount synchronously before its first await.
 [HarmonyPatch]
-public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
+public sealed class RegalPillowStats : MeasuredCounterStats<RegalPillow>
 {
-    [ThreadStatic] private static bool _inRestHeal;
+    protected override string PreviousMeasurement => "rest-heal bonus estimates";
+    [ThreadStatic] private static bool _withoutPillow;
 
     public override string Format => "Healed {0} extra HP.";
     public override StatCadence Cadence => StatCadence.Total;
@@ -449,28 +451,55 @@ public sealed class RegalPillowStats : SimpleCounterStats<RegalPillow>
 
     [HarmonyPatch(typeof(HealRestSiteOption), nameof(HealRestSiteOption.ExecuteRestSiteHeal))]
     [HarmonyPrefix]
-    public static void ExecuteRestSiteHealPrefix() => _inRestHeal = true;
+    internal static void RestPrefix(out RestHealScope __state) => __state = RestHealScope.Begin();
 
     [HarmonyPatch(typeof(HealRestSiteOption), nameof(HealRestSiteOption.ExecuteRestSiteHeal))]
-    [HarmonyPostfix]
-    public static void ExecuteRestSiteHealPostfix() => _inRestHeal = false;
+    [HarmonyFinalizer]
+    internal static void RestFinished(RestHealScope __state) => __state.Dispose();
+
+    [HarmonyPatch(typeof(RegalPillow), nameof(RegalPillow.ModifyRestSiteHealAmount))]
+    [HarmonyPrefix]
+    public static bool ModifyPrefix(decimal amount, ref decimal __result)
+    {
+        if (!_withoutPillow) return true;
+        __result = amount;
+        return false;
+    }
 
     [HarmonyPatch(typeof(RegalPillow), nameof(RegalPillow.ModifyRestSiteHealAmount))]
     [HarmonyPostfix]
-    public static void ModifyRestSiteHealAmountPostfix(RegalPillow __instance, Creature creature, decimal amount, decimal __result)
+    public static void ModifyPostfix(RegalPillow __instance, Creature creature)
     {
-        if (!_inRestHeal) return;
-        if (creature.Player != __instance.Owner) return;
-        int extra = (int)(__result - amount);
-        // Report what the bonus actually healed: only the part that fits under max HP after the base heal.
-        int room = creature.MaxHp - creature.CurrentHp - (int)amount;
-        extra = Math.Min(extra, Math.Max(room, 0));
-        if (extra <= 0) return;
-        // ExecuteRestSiteHeal evaluates the heal amount once for the heal, but the heal refreshes the
-        // rest-site UI, which re-reads it inside the same scope. Count the first evaluation only.
-        _inRestHeal = false;
-        Track(__instance, s => s.Amount += extra);
+        if (_withoutPillow || creature.Player != __instance.Owner) return;
+        RestHealScope.Prepare(creature, extra => Track(__instance, stats => stats.Amount += extra));
     }
+
+    [HarmonyPatch(typeof(CreatureCmd), nameof(CreatureCmd.Heal))]
+    [HarmonyPrefix]
+    internal static void HealPrefix(Creature creature, out HealMeasurement? __state)
+    {
+        __state = null;
+        var record = RestHealScope.Take(creature);
+        if (record == null || creature.Player == null) return;
+        decimal baseline;
+        _withoutPillow = true;
+        try { baseline = HealRestSiteOption.GetHealAmount(creature.Player); }
+        finally { _withoutPillow = false; }
+        __state = new HealMeasurement(record, creature.CurrentHp,
+            (int)Math.Max(baseline, 0), creature.MaxHp - creature.CurrentHp);
+    }
+
+    [HarmonyPatch(typeof(CreatureCmd), nameof(CreatureCmd.Heal))]
+    [HarmonyPostfix]
+    internal static void HealPostfix(Creature creature, HealMeasurement? __state)
+    {
+        if (__state == null) return;
+        int extra = RelicMeasurementMath.ExtraHealing(creature.CurrentHp - __state.HpBefore,
+            __state.BaseHeal, __state.MissingHp);
+        if (extra > 0) __state.Record(extra);
+    }
+
+    internal sealed record HealMeasurement(Action<int> Record, int HpBefore, int BaseHeal, int MissingHp);
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -764,4 +793,20 @@ public sealed class StoneHumidifierStats : SimpleCounterStats<StoneHumidifier>
         runner.Cleanup(() => { TestHelpers.CloseOverlays(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
+}
+
+// Mend selects its recipient asynchronously and heals without ExecuteRestSiteHeal.
+// Resolve this optional path by name so stable versions without Mend still load.
+[HarmonyPatch]
+internal static class RegalPillowMendPatch
+{
+    public static IEnumerable<MethodBase> TargetMethods()
+    {
+        var type = AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.RestSite.MendRestSiteOption");
+        if (type == null) yield break;
+        var method = AccessTools.DeclaredMethod(type, "OnSelect");
+        if (method != null) yield return method;
+    }
+    public static void Prefix(out RestHealScope __state) => __state = RestHealScope.Begin();
+    public static void Finalizer(RestHealScope __state) => __state.Dispose();
 }

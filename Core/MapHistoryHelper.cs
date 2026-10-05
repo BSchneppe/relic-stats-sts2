@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Rooms;
@@ -16,10 +17,7 @@ public static class MapHistoryHelper
     /// </summary>
     public static (int turns, int combats) GetEffective(Player player, int startFloor, int? endFloor = null)
     {
-        var (turns, combats) = GetEffective(
-            player.RunState.MapPointHistory, startFloor, endFloor);
-
-        // Add in-progress combat turns when not frozen (endFloor == null)
+        CombatHistoryTotals.LiveCombat? live = null;
         if (!endFloor.HasValue)
         {
             var cm = CombatManager.Instance;
@@ -28,15 +26,16 @@ public static class MapHistoryHelper
                 var state = cm.DebugOnlyGetState();
                 if (state != null)
                 {
-                    // Match how the game records TurnsTaken (see MapPointRoomHistoryEntry):
-                    // player's turn count, falling back to combat RoundNumber.
-                    turns += player.PlayerCombatState?.TurnNumber ?? state.RoundNumber;
-                    combats++; // count the current combat
+                    var room = player.RunState.CurrentMapPointHistoryEntry?.Rooms.LastOrDefault();
+                    bool recorded = room?.RoomType is RoomType.Monster or RoomType.Elite or RoomType.Boss;
+                    live = new CombatHistoryTotals.LiveCombat(player.RunState.TotalFloor,
+                        player.PlayerCombatState?.TurnNumber ?? state.RoundNumber,
+                        recorded ? room!.TurnsTaken : 0, recorded);
                 }
             }
         }
 
-        return (turns, combats);
+        return CombatHistoryTotals.Calculate(CombatVisits(player.RunState.MapPointHistory), startFloor, endFloor, live);
     }
 
     /// <summary>
@@ -46,8 +45,12 @@ public static class MapHistoryHelper
     public static (int turns, int combats) GetEffective(
         IEnumerable<IEnumerable<MapPointHistoryEntry>> mapPointHistory, int startFloor, int? endFloor = null)
     {
-        int turns = 0;
-        int combats = 0;
+        return CombatHistoryTotals.Calculate(CombatVisits(mapPointHistory), startFloor, endFloor);
+    }
+
+    private static IEnumerable<CombatHistoryTotals.Visit> CombatVisits(
+        IEnumerable<IEnumerable<MapPointHistoryEntry>> mapPointHistory)
+    {
         int floor = 0;
 
         foreach (var act in mapPointHistory)
@@ -55,20 +58,15 @@ public static class MapHistoryHelper
             foreach (var mapPoint in act)
             {
                 floor++;
-                if (floor <= startFloor) continue;
-                if (endFloor.HasValue && floor > endFloor.Value) break;
-
                 foreach (var room in mapPoint.Rooms)
                 {
                     if (room.RoomType is RoomType.Monster or RoomType.Elite or RoomType.Boss)
                     {
-                        turns += room.TurnsTaken;
-                        combats++;
+                        yield return new CombatHistoryTotals.Visit(floor, room.TurnsTaken);
                     }
                 }
             }
         }
 
-        return (turns, combats);
     }
 }

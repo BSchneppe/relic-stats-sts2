@@ -6,10 +6,13 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.Potions;
+using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Relics;
 using MegaCrit.Sts2.Core.Rooms;
@@ -184,9 +187,9 @@ public sealed class CrackedCoreStats : SimpleCounterStats<CrackedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(CrackedCore __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(CrackedCore __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Lightning"].IntValue);
     }
@@ -222,9 +225,9 @@ public sealed class InfusedCoreStats : SimpleCounterStats<InfusedCore>
 {
     public override string Format => "Channeled {0} [gold]Lightning[/gold] orbs.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(InfusedCore __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(InfusedCore __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Lightning"].IntValue);
     }
@@ -256,22 +259,49 @@ public sealed class InfusedCoreStats : SimpleCounterStats<InfusedCore>
 
 // DelicateFrond: generates potions before combat
 [HarmonyPatch(typeof(DelicateFrond), nameof(DelicateFrond.BeforeCombatStart))]
-public sealed class DelicateFrondStats : SimpleCounterStats<DelicateFrond>
+public sealed class DelicateFrondStats : MiscRecordedCounterStats<DelicateFrond>
 {
-    public override string Format => "Generated potions {0} times.";
+    public override string Format => "Potion generation activations: {0}.";
+    protected override string RecordedKey => "potionsProvidedV1";
+    protected override string RecordedFormat => "Recorded {0} potions provided.";
+
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(DelicateFrond __instance) =>
-        Track(__instance, s => s.Amount++);
+    public static void Prefix(DelicateFrond __instance, out IDisposable __state) =>
+        __state = EffectScope<PotionProcureResult>.Begin(__instance.Owner, result =>
+        {
+            if (result.success) Track(__instance, stats => ((MiscRecordedCounterStats<DelicateFrond>)stats).RecordedAmount++);
+        });
+
+    public static void Postfix(DelicateFrond __instance, IDisposable __state)
+    {
+        __state.Dispose();
+        Track(__instance, stats => stats.Amount++);
+    }
+
+    public static void Finalizer(IDisposable __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        int provided = 0;
+        runner.Do("empty potion belt and add relic", () => { TestHelpers.ClearPotions(); TestHelpers.AddRelic(RelicId); });
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
-        runner.Assert("tracked stat", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.WaitUntil("successful potion effects completed", () => RecordedAmount == TestHelpers.Player!.MaxPotionCount, 10000);
+        runner.Assert("counts successfully provided potions", () =>
+            new TestResult(Amount == 1 && RecordedAmount == TestHelpers.Player!.MaxPotionCount,
+                $"expected one activation and {TestHelpers.Player!.MaxPotionCount} potions, got {Amount} and {RecordedAmount}"));
+        runner.Do("block procurement with Sozu", () => {
+            provided = RecordedAmount;
+            TestHelpers.ClearPotions();
+            TestHelpers.AddRelic("SOZU");
+        });
+        runner.Do("start fight with Sozu", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("failed procurement does not provide a potion", () =>
+            new TestResult(Amount == 2 && RecordedAmount == provided && !TestHelpers.Player!.Potions.Any(),
+                $"expected two activations, unchanged provided={provided}, empty belt; got {Amount}/{RecordedAmount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic("SOZU"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -336,6 +366,7 @@ public sealed class FresnelLensStats : SimpleCounterStats<FresnelLens>
         runner.Do("add a non-block card to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
         runner.Assert("non-block card is not enchanted", () =>
             new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
+        MiscMeasurementTestActions.RegisterCreatedCardAcquisitions(runner, RelicId, "DEFEND_IRONCLAD", () => Amount, 1);
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -345,7 +376,7 @@ public sealed class FresnelLensStats : SimpleCounterStats<FresnelLens>
 [HarmonyPatch(typeof(LavaLamp), nameof(LavaLamp.TryModifyCardRewardOptionsLate))]
 public sealed class LavaLampStats : SimpleCounterStats<LavaLamp>
 {
-    public override string Format => "Upgraded card rewards {0} times.";
+    public override string Format => "Processed {0} card reward batches for upgrading.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(LavaLamp __instance, bool __result)
     {
@@ -379,9 +410,9 @@ public sealed class LavaLampStats : SimpleCounterStats<LavaLamp>
 public sealed class LunarPastryStats : SimpleCounterStats<LunarPastry>
 {
     public override string Format => "Gained {0} [gold]Stars[/gold].";
-    public static void Postfix(LunarPastry __instance, CombatSide side)
+    public static void Postfix(LunarPastry __instance, CombatSide side, IEnumerable<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Stars.IntValue);
     }
 
@@ -429,6 +460,7 @@ public sealed class MoltenEggStats : SimpleCounterStats<MoltenEgg>
         runner.Do("add skill to deck", () => TestHelpers.AddCardToDeck("DEFEND_IRONCLAD"));
         runner.Assert("skill is not upgraded", () =>
             new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
+        MiscMeasurementTestActions.RegisterCreatedCardAcquisitions(runner, RelicId, "STRIKE_IRONCLAD", () => Amount, 1);
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -460,6 +492,7 @@ public sealed class ToxicEggStats : SimpleCounterStats<ToxicEgg>
         runner.Do("add attack to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
         runner.Assert("attack is not upgraded", () =>
             new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
+        MiscMeasurementTestActions.RegisterCreatedCardAcquisitions(runner, RelicId, "DEFEND_IRONCLAD", () => Amount, 1);
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -491,6 +524,7 @@ public sealed class FrozenEggStats : SimpleCounterStats<FrozenEgg>
         runner.Do("add attack to deck", () => TestHelpers.AddCardToDeck("STRIKE_IRONCLAD"));
         runner.Assert("attack is not upgraded", () =>
             new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
+        MiscMeasurementTestActions.RegisterCreatedCardAcquisitions(runner, RelicId, "DEMON_FORM", () => Amount, 1);
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -563,11 +597,13 @@ public sealed class PaelsEyeStats : IRelicStats
 
     public int ExtraTurns { get; set; }
     public int CardsExhausted { get; set; }
+    public int CardsExhaustedCompleted { get; set; }
 
     public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Took {Fmt.Blue(ExtraTurns)} extra turns.\n" +
-               $"{Fmt.Gold("Exhausted")} {Fmt.Blue(CardsExhausted)} cards.";
+               $"Recorded {Fmt.Blue(CardsExhaustedCompleted)} cards {Fmt.Gold("Exhausted")}.\n" +
+               $"Selected {Fmt.Blue(CardsExhausted)} cards for exhaustion.";
     }
 
     public JsonObject Save()
@@ -576,6 +612,7 @@ public sealed class PaelsEyeStats : IRelicStats
         {
             ["extraTurns"] = ExtraTurns,
             ["cardsExhausted"] = CardsExhausted,
+            ["cardsExhaustedCompletedV1"] = CardsExhaustedCompleted,
         };
         return obj;
     }
@@ -584,12 +621,14 @@ public sealed class PaelsEyeStats : IRelicStats
     {
         ExtraTurns = data["extraTurns"]?.GetValue<int>() ?? 0;
         CardsExhausted = data["cardsExhausted"]?.GetValue<int>() ?? 0;
+        CardsExhaustedCompleted = data["cardsExhaustedCompletedV1"]?.GetValue<int>() ?? 0;
     }
 
     public void Reset()
     {
         ExtraTurns = 0;
         CardsExhausted = 0;
+        CardsExhaustedCompleted = 0;
     }
 
     private static bool TryGet(PaelsEye instance, out PaelsEyeStats stats)
@@ -613,8 +652,9 @@ public sealed class PaelsEyeStats : IRelicStats
 
     [HarmonyPatch(typeof(PaelsEye), nameof(PaelsEye.BeforeSideTurnEndEarly))]
     [HarmonyPrefix]
-    public static void BeforeSideTurnEndEarlyPrefix(PaelsEye __instance, IEnumerable<Creature> participants)
+    public static void BeforeSideTurnEndEarlyPrefix(PaelsEye __instance, IEnumerable<Creature> participants, out IDisposable? __state)
     {
+        __state = null;
         // Mirror the relic's exhaust guard: owner took part in the turn, relic unused this combat,
         // no (non-autoplay) cards played this turn, and owner was part of the last player turn.
         if (!participants.Contains(__instance.Owner.Creature)) return;
@@ -627,9 +667,21 @@ public sealed class PaelsEyeStats : IRelicStats
         if (!TryGet(__instance, out var stats)) return;
         var cards = CardPile.GetCards(__instance.Owner, PileType.Hand);
         stats.CardsExhausted += cards.Count();
+        __state = EffectScope<CardPileAddResult?>.Begin(__instance.Owner, result =>
+        {
+            if (result is { success: true } && TryGet(__instance, out var current))
+                current.CardsExhaustedCompleted++;
+        });
     }
 
 
+    [HarmonyPatch(typeof(PaelsEye), nameof(PaelsEye.BeforeSideTurnEndEarly))]
+    [HarmonyPostfix]
+    public static void BeforeSideTurnEndEarlyPostfix(IDisposable? __state) => __state?.Dispose();
+
+    [HarmonyPatch(typeof(PaelsEye), nameof(PaelsEye.BeforeSideTurnEndEarly))]
+    [HarmonyFinalizer]
+    public static void BeforeSideTurnEndEarlyFinalizer(IDisposable? __state) => __state?.Dispose();
 
 #if DEBUG
     public void RegisterTest(TestRunner runner)
@@ -653,15 +705,41 @@ public sealed class PaelsEyeStats : IRelicStats
         // The next PlayerTurnStart is the extra turn (no enemy turn in between).
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("exhausted the hand and took the extra turn", () =>
-            new TestResult(CardsExhausted == 2 && ExtraTurns == 1, $"expected CardsExhausted=2 ExtraTurns=1, got CardsExhausted={CardsExhausted} ExtraTurns={ExtraTurns}"));
+            new TestResult(CardsExhausted == 2 && CardsExhaustedCompleted == 2 && ExtraTurns == 1, $"expected CardsExhausted=2 ExtraTurns=1, got selected={CardsExhausted} completed={CardsExhaustedCompleted} ExtraTurns={ExtraTurns}"));
         runner.Do("hold a card, end the extra turn without playing", () => {
             TestHelpers.SpawnCard("STRIKE");
             TestHelpers.EndTurn();
         });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("used up for the combat: no second exhaust or extra turn", () =>
-            new TestResult(CardsExhausted == 2 && ExtraTurns == 1, $"expected CardsExhausted still 2 ExtraTurns still 1, got CardsExhausted={CardsExhausted} ExtraTurns={ExtraTurns}"));
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+            new TestResult(CardsExhausted == 2 && CardsExhaustedCompleted == 2 && ExtraTurns == 1, $"expected CardsExhausted still 2 ExtraTurns still 1, got selected={CardsExhausted} completed={CardsExhaustedCompleted} ExtraTurns={ExtraTurns}"));
+        int selectedBefore = 0;
+        int completedBefore = 0;
+        runner.Do("add Charon's Ashes", () => {
+            selectedBefore = CardsExhausted;
+            completedBefore = CardsExhaustedCompleted;
+            // Debug room replacement does not dispatch a real combat-end reset. Use a fresh
+            // Eye instance, while keeping the registry's selected/completed measurements.
+            TestHelpers.RemoveRelic(RelicId);
+            TestHelpers.AddRelic(RelicId);
+            TestHelpers.AddRelic("CHARONS_ASHES");
+        });
+        runner.Do("start fresh fight for lethal exhaust", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Do("end turn with two cards and lethal Charon's Ashes damage", () => {
+            TestHelpers.DiscardHand();
+            TestHelpers.SpawnCard("STRIKE");
+            TestHelpers.SpawnCard("DEFEND");
+            foreach (var enemy in TestHelpers.Player!.Creature.CombatState!.HittableEnemies)
+                enemy.SetCurrentHpInternal(3);
+            TestHelpers.EndTurn();
+        });
+        runner.WaitUntil("first exhaust completes and combat ends", () =>
+            CombatManager.Instance.IsOverOrEnding && CardsExhaustedCompleted == completedBefore + 1, 15000);
+        runner.Assert("combat ending prevents the second selected exhaust", () =>
+            new TestResult(CardsExhausted == selectedBefore + 2 && CardsExhaustedCompleted == completedBefore + 1,
+                $"expected selected +2 and completed +1, got {CardsExhausted - selectedBefore}/{CardsExhaustedCompleted - completedBefore}"));
+        runner.Cleanup(() => { TestHelpers.DisableGodMode(); TestHelpers.RemoveRelic("CHARONS_ASHES"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -810,9 +888,9 @@ public sealed class PhylacteryUnboundStats : IRelicStats
     public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         var total = CombatStartSummons + TurnSummons;
-        return $"Summoned {Fmt.Blue(total)} minions.\n" +
-               $"  At combat start: {Fmt.Blue(CombatStartSummons)}\n" +
-               $"  Per turn: {Fmt.Blue(TurnSummons)}";
+        return $"Provided {Fmt.Blue(total)} base Summon (Osty HP).\n" +
+               $"  From combat starts: {Fmt.Blue(CombatStartSummons)}\n" +
+               $"  From turn starts: {Fmt.Blue(TurnSummons)}";
     }
 
     public JsonObject Save()
@@ -857,9 +935,9 @@ public sealed class PhylacteryUnboundStats : IRelicStats
 
     [HarmonyPatch(typeof(PhylacteryUnbound), nameof(PhylacteryUnbound.AfterSideTurnStart))]
     [HarmonyPostfix]
-    public static void AfterSideTurnStartPostfix(PhylacteryUnbound __instance, CombatSide side)
+    public static void AfterSideTurnStartPostfix(PhylacteryUnbound __instance, CombatSide side, IReadOnlyList<Creature> participants)
     {
-        if (side != CombatSide.Player) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.TurnSummons += __instance.DynamicVars["StartOfTurn"].IntValue;
     }
@@ -989,11 +1067,11 @@ public sealed class RazorToothStats : SimpleCounterStats<RazorTooth>
 [HarmonyPatch(typeof(RedMask), nameof(RedMask.BeforeSideTurnStart))]
 public sealed class RedMaskStats : SimpleCounterStats<RedMask>
 {
-    public override string Format => "Applied weakness {0} times.";
+    public override string Format => "Triggered enemy Weak applications {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(RedMask __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(RedMask __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
@@ -1023,8 +1101,23 @@ public sealed class RuinedHelmetStats : SimpleCounterStats<RuinedHelmet>
 {
     public override string Format => "Doubled strength {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(RuinedHelmet __instance) =>
-        Track(__instance, s => s.Amount++);
+    public decimal ExtraStrength { get; set; }
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RuinedHelmet, PendingStrength> Pending = new();
+    internal sealed class PendingStrength { internal decimal Amount; }
+
+    public static void Postfix(RuinedHelmet __instance) => Track(__instance, stats => {
+        stats.Amount++;
+        if (Pending.TryGetValue(__instance, out var pending)) {
+            ((RuinedHelmetStats)stats).ExtraStrength += pending.Amount;
+            Pending.Remove(__instance);
+        }
+    });
+
+    public override string GetDescription(int effectiveTurns, int effectiveCombats) =>
+        $"Recorded {Fmt.Blue(ExtraStrength.ToString(System.Globalization.CultureInfo.InvariantCulture))} extra [gold]Strength[/gold] supplied.\n" + base.GetDescription(effectiveTurns, effectiveCombats);
+    public override JsonObject Save() { var data = base.Save(); data["extraStrengthV1"] = ExtraStrength; return data; }
+    public override void Load(JsonObject data) { base.Load(data); ExtraStrength = data["extraStrengthV1"]?.GetValue<decimal>() ?? 0; }
+    public override void Reset() { base.Reset(); ExtraStrength = 0; }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -1044,30 +1137,35 @@ public sealed class RuinedHelmetStats : SimpleCounterStats<RuinedHelmet>
         });
         runner.WaitFor(GameEvent.CardPlayed);
         runner.Assert("tracked the doubling", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
+            new TestResult(Amount == 1 && ExtraStrength == 2, $"expected one doubling adding 2 Strength, got {Amount}/{ExtraStrength}"));
         runner.Do("play a second Strength card", () => {
             TestHelpers.SpawnCard("INFLAME");
             TestHelpers.PlayCard(0);
         });
         runner.WaitFor(GameEvent.CardPlayed);
         runner.Assert("second Strength gain is not doubled (once per combat)", () =>
-            new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
+            new TestResult(Amount == 1 && ExtraStrength == 2, $"expected one doubling and extra Strength still 2, got {Amount}/{ExtraStrength}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
 
-// Shovel: adds dig option at rest sites (track via TryModifyRestSiteOptions as proxy for availability)
-// Since we can't patch DigRestSiteOption.OnSelect, we track times it offered the dig option
-// This is a best-effort proxy; the player may not always choose to dig
+// Shovel: preserve offered options and separately record successful selection of its Dig option.
 [HarmonyPatch(typeof(Shovel), nameof(Shovel.TryModifyRestSiteOptions))]
-public sealed class ShovelStats : SimpleCounterStats<Shovel>
+public sealed class ShovelStats : MiscRecordedCounterStats<Shovel>
 {
     public override string Format => "Offered dig {0} times.";
+    protected override string RecordedKey => "digsCompletedV1";
+    protected override string RecordedFormat => "Recorded {0} completed Digs.";
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RestSiteOption, Shovel> OfferedOptions = new();
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(Shovel __instance, bool __result)
+    public static void Postfix(Shovel __instance, ICollection<RestSiteOption> options, bool __result)
     {
         if (!__result) return;
+        foreach (var option in options.OfType<DigRestSiteOption>()) {
+            OfferedOptions.Remove(option);
+            OfferedOptions.Add(option, __instance);
+        }
         Track(__instance, s => s.Amount++);
     }
 
@@ -1077,16 +1175,20 @@ public sealed class ShovelStats : SimpleCounterStats<Shovel>
         // TryModifyRestSiteOptions runs when the rest site's options are generated on entry
         // (RestSiteOption.Generate -> Hook.ModifyRestSiteOptions), once per rest site. A combat room
         // generates no rest-site options, so the count stays put.
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("prepare a visible Shovel acquisition fixture", () => MiscMeasurementTestActions.PrepareShovelFixture());
         runner.Do("enter rest site", () => TestHelpers.EnterRestSite());
         runner.WaitFor(GameEvent.RoomEntered);
         runner.Assert("tracked one dig offer", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
+            new TestResult(Amount == 1 && RecordedAmount == 0, $"expected one offer and no completed Dig, got {Amount}/{RecordedAmount}"));
+        runner.Do("choose Dig", () => TestHelpers.SelectRestSiteOption("DIG"));
+        runner.WaitUntil("Dig completed", () => RecordedAmount == 1, 15000);
+        runner.Assert("Dig completion recorded separately", () =>
+            new TestResult(Amount == 1 && RecordedAmount == 1, $"expected offer=1 and completed=1, got {Amount}/{RecordedAmount}"));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("combat room offers no dig", () =>
             new TestResult(Amount == 1, $"expected Amount still 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Cleanup(() => { MiscMeasurementTestActions.ClearShovelFixture(); Reset(); });
     }
 #endif
 }
@@ -1131,9 +1233,9 @@ public sealed class AkabekoStats : SimpleCounterStats<Akabeko>
 {
     public override string Format => "Gained {0} [gold]Vigor[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(Akabeko __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(Akabeko __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["VigorPower"].IntValue);
     }
@@ -1223,27 +1325,42 @@ public sealed class MiniRegentStats : SimpleCounterStats<MiniRegent>
 
 // RoyalPoison: deals self-damage at start of first turn
 [HarmonyPatch(typeof(RoyalPoison), nameof(RoyalPoison.AfterPlayerTurnStart))]
-public sealed class RoyalPoisonStats : SimpleCounterStats<RoyalPoison>
+public sealed class RoyalPoisonStats : MiscRecordedCounterStats<RoyalPoison>
 {
-    public override string Format => "Dealt {0} [gold]Damage[/gold] to self.";
+    public override string Format => "Requested {0} base self-damage.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(RoyalPoison __instance, Player player)
+    protected override string RecordedKey => "selfHpLostV1";
+    protected override string RecordedFormat => "Recorded {0} HP lost to self-damage.";
+
+    public static void Prefix(RoyalPoison __instance, Player player, out IDisposable? __state)
     {
+        __state = player == __instance.Owner && player.PlayerCombatState!.TurnNumber <= 1
+            ? DirectDamageScope.Begin(player, results => Track(__instance,
+                stats => ((RoyalPoisonStats)stats).RecordedAmount += DirectDamageScope.HpLost(results, player.Creature)))
+            : null;
+    }
+
+    public static void Postfix(RoyalPoison __instance, Player player, IDisposable? __state)
+    {
+        __state?.Dispose();
         if (player != __instance.Owner) return;
         if (player.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Damage.IntValue);
     }
 
+    public static void Finalizer(IDisposable? __state) => __state?.Dispose();
+
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        runner.Do("add relic with normal damage", () => { TestHelpers.DisableGodMode(); TestHelpers.AddRelic(RelicId); });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        runner.Assert("tracked stat", () => {
+        runner.WaitUntil("self-damage completed", () => RecordedAmount > 0, 10000);
+        runner.Assert("tracked actual HP cost", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic!.DynamicVars.Damage.IntValue;
-            return new TestResult(expected > 0 && Amount == expected, $"expected Amount == {expected}, got {Amount}");
+            return new TestResult(expected > 0 && Amount == expected && RecordedAmount == expected, $"expected requested and actual HP {expected}, got {Amount}/{RecordedAmount}");
         });
         // Turn-1 guard: AfterPlayerTurnStart on turn 2 must not deal (or count) again.
         runner.Do("end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
@@ -1251,9 +1368,23 @@ public sealed class RoyalPoisonStats : SimpleCounterStats<RoyalPoison>
         runner.Assert("turn 2 does not deal again", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic!.DynamicVars.Damage.IntValue;
-            return new TestResult(Amount == expected, $"expected Amount still {expected}, got {Amount}");
+            return new TestResult(Amount == expected && RecordedAmount == expected, $"expected requested and actual HP still {expected}, got {Amount}/{RecordedAmount}");
         });
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+        int previousHpCost = 0;
+        int nominalDamage = 0;
+        runner.Do("add Tungsten Rod and disable god mode", () => {
+            previousHpCost = RecordedAmount;
+            nominalDamage = TestHelpers.Player!.Relics.Single(r => r.Id.Entry == RelicId).DynamicVars.Damage.IntValue;
+            TestHelpers.DisableGodMode();
+            TestHelpers.AddRelic("TUNGSTEN_ROD");
+        });
+        runner.Do("start fight with Tungsten Rod", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.WaitUntil("reduced self-damage completed", () => RecordedAmount > previousHpCost, 10000);
+        runner.Assert("Tungsten Rod changes actual cost without changing requested damage", () =>
+            new TestResult(Amount == nominalDamage * 2 && RecordedAmount == previousHpCost + nominalDamage - 1,
+                $"expected request={nominalDamage * 2}, actual={previousHpCost + nominalDamage - 1}; got {Amount}/{RecordedAmount}"));
+        runner.Cleanup(() => { TestHelpers.DisableGodMode(); TestHelpers.RemoveRelic("TUNGSTEN_ROD"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1410,7 +1541,7 @@ public sealed class NunchakuStats : SimpleCounterStats<Nunchaku>
 [HarmonyPatch(typeof(GremlinHorn), nameof(GremlinHorn.AfterDeath))]
 public sealed class GremlinHornStats : SimpleCounterStats<GremlinHorn>
 {
-    public override string Format => "Triggered {0} times (drew cards + gained [gold]Energy[/gold]).";
+    public override string Format => "Triggered {0} enemy-death rewards.";
     public static void Postfix(GremlinHorn __instance, Creature target)
     {
         if (target.Side == __instance.Owner.Creature.Side) return;
@@ -1469,22 +1600,49 @@ public sealed class VajraStats : SimpleCounterStats<Vajra>
 
 // PetrifiedToad: generates a PotionShapedRock before each combat
 [HarmonyPatch(typeof(PetrifiedToad), nameof(PetrifiedToad.BeforeCombatStartLate))]
-public sealed class PetrifiedToadStats : SimpleCounterStats<PetrifiedToad>
+public sealed class PetrifiedToadStats : MiscRecordedCounterStats<PetrifiedToad>
 {
-    public override string Format => "Generated {0} potions.";
+    public override string Format => "Potion procurement attempts: {0}.";
+    protected override string RecordedKey => "potionsProvidedV1";
+    protected override string RecordedFormat => "Recorded {0} potions provided.";
+
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(PetrifiedToad __instance) =>
-        Track(__instance, s => s.Amount++);
+    public static void Prefix(PetrifiedToad __instance, out IDisposable __state) =>
+        __state = EffectScope<PotionProcureResult>.Begin(__instance.Owner, result =>
+        {
+            if (result.success) Track(__instance, stats => ((MiscRecordedCounterStats<PetrifiedToad>)stats).RecordedAmount++);
+        });
+
+    public static void Postfix(PetrifiedToad __instance, IDisposable __state)
+    {
+        __state.Dispose();
+        Track(__instance, stats => stats.Amount++);
+    }
+
+    public static void Finalizer(IDisposable __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
+        int provided = 0;
+        runner.Do("empty potion belt and add relic", () => { TestHelpers.ClearPotions(); TestHelpers.AddRelic(RelicId); });
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
-        runner.Assert("tracked stat", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.WaitUntil("successful potion effects completed", () => RecordedAmount == 1, 10000);
+        runner.Assert("counts successfully provided potions", () =>
+            new TestResult(Amount == 1 && RecordedAmount == 1,
+                $"expected one activation and {1} potions, got {Amount} and {RecordedAmount}"));
+        runner.Do("block procurement with Sozu", () => {
+            provided = RecordedAmount;
+            TestHelpers.ClearPotions();
+            TestHelpers.AddRelic("SOZU");
+        });
+        runner.Do("start fight with Sozu", () => TestHelpers.StartFight());
+        runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("failed procurement does not provide a potion", () =>
+            new TestResult(Amount == 2 && RecordedAmount == provided && !TestHelpers.Player!.Potions.Any(),
+                $"expected two activations, unchanged provided={provided}, empty belt; got {Amount}/{RecordedAmount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic("SOZU"); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -1623,9 +1781,9 @@ public sealed class GiryaStats : SimpleCounterStats<Girya>
 public sealed class BrimstoneStats : SimpleCounterStats<Brimstone>
 {
     public override string Format => "Gained {0} [gold]Strength[/gold].";
-    public static void Postfix(Brimstone __instance, CombatSide side)
+    public static void Postfix(Brimstone __instance, CombatSide side, IReadOnlyList<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["SelfStrength"].IntValue);
     }
 
@@ -1686,11 +1844,11 @@ public sealed class SneckoSkullStats : SimpleCounterStats<SneckoSkull>
 [HarmonyPatch(typeof(TwistedFunnel), nameof(TwistedFunnel.BeforeSideTurnStart))]
 public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 {
-    public override string Format => "Applied {0} [gold]Poison[/gold].";
+    public override string Format => "Provided {0} base [gold]Poison[/gold] for application.";
     public override StatCadence Cadence => StatCadence.Combat;
-    public static void Postfix(TwistedFunnel __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(TwistedFunnel __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         int enemies = __instance.Owner.Creature.CombatState!.HittableEnemies.Count;
         Track(__instance, s => s.Amount += __instance.DynamicVars["PoisonPower"].IntValue * enemies);
@@ -1731,7 +1889,7 @@ public sealed class TwistedFunnelStats : SimpleCounterStats<TwistedFunnel>
 // Pendulum: draws cards every N turns at turn start
 public sealed class PendulumStats : SimpleCounterStats<Pendulum>
 {
-    public override string Format => "Drew {0} cards.";
+    public override string Format => "Requested {0} additional card draws.";
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -1896,11 +2054,11 @@ public sealed class BookOfFiveRingsStats : SimpleCounterStats<BookOfFiveRings>
 [HarmonyPatch(typeof(BagOfMarbles), nameof(BagOfMarbles.BeforeSideTurnStart))]
 public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
 {
-    public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
+    public override string Format => "Triggered enemy [gold]Vulnerable[/gold] applications {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(BagOfMarbles __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(BagOfMarbles __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount++);
     }
@@ -1928,7 +2086,7 @@ public sealed class BagOfMarblesStats : SimpleCounterStats<BagOfMarbles>
 [HarmonyPatch(typeof(Bellows), nameof(Bellows.AfterPlayerTurnStart))]
 public sealed class BellowsStats : SimpleCounterStats<Bellows>
 {
-    public override string Format => "Upgraded {0} hands.";
+    public override string Format => "Used opening-hand upgrading {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(Bellows __instance, Player player)
     {
@@ -1996,9 +2154,9 @@ public sealed class BronzeScalesStats : SimpleCounterStats<BronzeScales>
 public sealed class CrossbowStats : SimpleCounterStats<Crossbow>
 {
     public override string Format => "Generated {0} free attacks.";
-    public static void Postfix(Crossbow __instance, CombatSide side)
+    public static void Postfix(Crossbow __instance, CombatSide side, IReadOnlyList<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         Track(__instance, s => s.Amount++);
     }
 
@@ -2095,11 +2253,14 @@ public sealed class EmberTeaStats : SimpleCounterStats<EmberTea>
 }
 
 // FakeSneckoEye: applies Confused at combat start
-[HarmonyPatch(typeof(FakeSneckoEye), nameof(FakeSneckoEye.BeforeCombatStart))]
+[HarmonyPatch]
 public sealed class FakeSneckoEyeStats : SimpleCounterStats<FakeSneckoEye>
 {
-    public override string Format => "Applied [gold]Confused[/gold] {0} times.";
+    public override string Format => "Activated [gold]Confused[/gold] {0} times.";
     public override StatCadence Cadence => StatCadence.Total;
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(FakeSneckoEye), "ApplyPower");
+
     public static void Postfix(FakeSneckoEye __instance) =>
         Track(__instance, s => s.Amount++);
 
@@ -2122,9 +2283,9 @@ public sealed class FencingManualStats : SimpleCounterStats<FencingManual>
 {
     public override string Format => "Gained {0} [gold]Forge[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(FencingManual __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(FencingManual __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Forge.IntValue);
     }
@@ -2195,35 +2356,21 @@ public sealed class FuneraryMaskStats : SimpleCounterStats<FuneraryMask>
 
 // GamePiece: draws cards when Powers are played
 [HarmonyPatch(typeof(GamePiece), nameof(GamePiece.AfterCardPlayed))]
-public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
+public sealed class GamePieceStats : MeasuredCounterStats<GamePiece>
 {
+    protected override string PreviousMeasurement => "requested card draws";
     public override string Format => "Drew {0} cards from Powers.";
 
-    // The draw is awaited (CardPileCmd.Draw), so the Postfix wraps the returned Task and counts the
-    // hand-size increase once the draw has completed: an empty draw and discard pile draws nothing.
-    // __state is the hand count before the relic ran, or -1 when the relic does not act.
-    public static void Prefix(GamePiece __instance, CardPlay cardPlay, out int __state)
+    internal static void Prefix(GamePiece __instance, CardPlay cardPlay, out DirectDrawScope? __state)
     {
-        __state = -1;
-        if (cardPlay.Card.Owner != __instance.Owner) return;
-        if (cardPlay.Card.Type != CardType.Power) return;
-        if (!CombatManager.Instance.IsInProgress) return;
-        __state = PileType.Hand.GetPile(__instance.Owner).Cards.Count;
+        __state = cardPlay.Card.Owner == __instance.Owner && cardPlay.Card.Type == CardType.Power
+            && CombatManager.Instance.IsInProgress
+            ? DirectDrawScope.Begin(__instance.Owner, count => Track(__instance, s => s.Amount += count))
+            : null;
     }
 
-    public static void Postfix(GamePiece __instance, ref Task __result, int __state)
-    {
-        if (__state < 0) return;
-        __result = CountWhenDone(__instance, __result, __state);
-    }
-
-    private static async Task CountWhenDone(GamePiece relic, Task inner, int handBefore)
-    {
-        await inner;
-        int drawn = PileType.Hand.GetPile(relic.Owner).Cards.Count - handBefore;
-        if (drawn <= 0) return;
-        Track(relic, s => s.Amount += drawn);
-    }
+    [HarmonyFinalizer]
+    internal static void Finished(DirectDrawScope? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -2266,6 +2413,20 @@ public sealed class GamePieceStats : SimpleCounterStats<GamePiece>
             var expected = relic?.DynamicVars.Cards.IntValue ?? -1;
             return new TestResult(Amount == expected, $"expected Amount still {expected}, got {Amount}");
         });
+        runner.Do("draw a Status under Iteration", () =>
+        {
+            TestHelpers.ApplyPower("ITERATION_POWER", 2);
+            PileType.Draw.GetPile(TestHelpers.Player!).Clear(silent: true);
+            TestHelpers.SpawnCard("WOUND", "draw");
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.SpawnCard("STRIKE_IRONCLAD", "draw");
+            TestHelpers.AddEnergy(3);
+            TestHelpers.SpawnCard("DEMON_FORM");
+            TestHelpers.PlayCard(TestHelpers.FindCardInHand(CardType.Power));
+        });
+        runner.WaitUntil("the nested draws completed", () => Amount >= 2);
+        runner.Assert("Iteration's two extra draws are not credited to Game Piece", () =>
+            new TestResult(Amount == 2, $"expected 2 direct draws in total, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -2306,7 +2467,7 @@ public sealed class GoldPlatedCablesStats : SimpleCounterStats<GoldPlatedCables>
 // HandDrill: applies Vulnerable when block is broken
 public sealed class HandDrillStats : SimpleCounterStats<HandDrill>
 {
-    public override string Format => "Applied [gold]Vulnerable[/gold] {0} times.";
+    public override string Format => "Attempted [gold]Vulnerable[/gold] application {0} times.";
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -2536,11 +2697,11 @@ public sealed class ReptileTrinketStats : SimpleCounterStats<ReptileTrinket>
 [HarmonyPatch(typeof(RunicCapacitor), nameof(RunicCapacitor.AfterSideTurnStart))]
 public sealed class RunicCapacitorStats : SimpleCounterStats<RunicCapacitor>
 {
-    public override string Format => "Added {0} orb slots.";
+    public override string Format => "Requested {0} additional orb slots.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(RunicCapacitor __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(RunicCapacitor __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Repeat.IntValue);
     }
@@ -2729,9 +2890,9 @@ public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
 {
     public override string Format => "Channeled {0} [gold]Dark[/gold] orbs.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(SymbioticVirus __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(SymbioticVirus __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars["Dark"].IntValue);
     }
@@ -2764,42 +2925,60 @@ public sealed class SymbioticVirusStats : SimpleCounterStats<SymbioticVirus>
 
 // ToastyMittens: gains Strength and exhausts a card each turn
 [HarmonyPatch]
-public sealed class ToastyMittensStats : SimpleCounterStats<ToastyMittens>
+public sealed class ToastyMittensStats : MiscRecordedCounterStats<ToastyMittens>
 {
-    public override string Format => "Gained {0} [gold]Strength[/gold] and exhausted cards.";
+    public override string Format => "Provided {0} base [gold]Strength[/gold].";
+
+    protected override string RecordedKey => "cardsExhaustedV1";
+    protected override string RecordedFormat => "Recorded {0} cards Exhausted.";
+    internal static readonly bool ExhaustsAfterDraw = AccessTools.DeclaredMethod(typeof(ToastyMittens), nameof(ToastyMittens.AfterPlayerTurnStart)) != null;
 
     // Both versions name their Player parameter "player", so one postfix covers either.
     public static IEnumerable<MethodBase> TargetMethods() =>
         PatchTarget.FirstDeclared(typeof(ToastyMittens),
             nameof(ToastyMittens.AfterPlayerTurnStart), nameof(ToastyMittens.BeforeHandDraw));
 
-    public static void Postfix(ToastyMittens __instance, Player player)
+    public static void Prefix(ToastyMittens __instance, Player player, out IDisposable? __state) =>
+        __state = player == __instance.Owner ? EffectScope<CardPileAddResult?>.Begin(player, result => {
+            if (result is { success: true }) Track(__instance, stats => ((ToastyMittensStats)stats).RecordedAmount++);
+        }) : null;
+
+    public static void Postfix(ToastyMittens __instance, Player player, IDisposable? __state)
     {
+        __state?.Dispose();
         if (player != __instance.Owner.Creature.Player) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Strength.IntValue);
     }
+
+    public static void Finalizer(IDisposable? __state) => __state?.Dispose();
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
         // 0.111: AfterPlayerTurnStart exhausts one card from the hand (a selection prompt when the
-        // hand has cards; the test hand is empty) and then applies Strength. The stat counts the
-        // relic's Strength at method entry, once per turn. The auto-selector is pushed before the
+        // hand has cards) and then applies Strength. Seed two cards to exercise completed Exhaust
+        // independently of its base Strength provision. The auto-selector is pushed before the
         // fight so a prompt, if one opens, never blocks the turn end.
         runner.Do("auto-answer prompts + add relic", () => { TestHelpers.PushAutoCardSelector(); TestHelpers.AddRelic(RelicId); });
+        runner.Do("seed two cards for exhaustion", () => {
+            TestHelpers.AddCardToDeck("DEFEND_IRONCLAD");
+            TestHelpers.AddCardToDeck("DEFEND_IRONCLAD");
+        });
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.WaitUntil("opening exhaust completed", () => !ExhaustsAfterDraw || RecordedAmount == 1, 10000);
         runner.Assert("tracked turn-1 strength", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic!.DynamicVars.Strength.IntValue;
-            return new TestResult(expected > 0 && Amount == expected, $"expected Amount == {expected}, got {Amount}");
+            return new TestResult(expected > 0 && Amount == expected && RecordedAmount == (ExhaustsAfterDraw ? 1 : 0), $"expected Strength={expected} and Exhaust={(ExhaustsAfterDraw ? 1 : 0)}, got {Amount}/{RecordedAmount}");
         });
         runner.Do("god mode + protect enemy + end turn", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); TestHelpers.EndTurn(); });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.WaitUntil("second exhaust completed", () => !ExhaustsAfterDraw || RecordedAmount == 2, 10000);
         runner.Assert("tracked turn-2 strength", () => {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = 2 * relic!.DynamicVars.Strength.IntValue;
-            return new TestResult(expected > 0 && Amount == expected, $"expected Amount == {expected} after two turns, got {Amount}");
+            return new TestResult(expected > 0 && Amount == expected && RecordedAmount == (ExhaustsAfterDraw ? 2 : 0), $"expected Strength={expected} and Exhaust={(ExhaustsAfterDraw ? 2 : 0)}, got {Amount}/{RecordedAmount}");
         });
         runner.Cleanup(() => { TestHelpers.PopCardSelector(); TestHelpers.CloseOverlays(); TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
@@ -2861,7 +3040,7 @@ public sealed class WarHammerStats : SimpleCounterStats<WarHammer>
 [HarmonyPatch(typeof(WongosMysteryTicket), nameof(WongosMysteryTicket.AfterCombatEnd))]
 public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryTicket>
 {
-    public override string Format => "Completed {0} combats toward relic.";
+    public override string Format => "Completed {0} combats while held.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(WongosMysteryTicket __instance) =>
         Track(__instance, s => s.Amount++);
@@ -2886,11 +3065,11 @@ public sealed class WongosMysteryTicketStats : SimpleCounterStats<WongosMysteryT
 [HarmonyPatch(typeof(BigHat), nameof(BigHat.AfterSideTurnStart))]
 public sealed class BigHatStats : SimpleCounterStats<BigHat>
 {
-    public override string Format => "Generated {0} [gold]Ethereal[/gold] cards.";
+    public override string Format => "Requested {0} distinct [gold]Ethereal[/gold] cards for generation.";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(BigHat __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(BigHat __instance, CombatSide side, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Cards.IntValue);
     }
@@ -3016,7 +3195,7 @@ public sealed class VexingPuzzleboxStats : SimpleCounterStats<VexingPuzzlebox>
 [HarmonyPatch(typeof(ChoicesParadox), nameof(ChoicesParadox.AfterPlayerTurnStart))]
 public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
 {
-    public override string Format => "Generated {0} cards to choose from.";
+    public override string Format => "Triggered {0} retained-card selections.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(ChoicesParadox __instance, Player player)
     {
@@ -3049,7 +3228,7 @@ public sealed class ChoicesParadoxStats : SimpleCounterStats<ChoicesParadox>
 [HarmonyPatch(typeof(JeweledMask), nameof(JeweledMask.BeforeHandDraw))]
 public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
 {
-    public override string Format => "Drew {0} free Powers.";
+    public override string Format => "Selected {0} Powers to make free on turn 1.";
     public override StatCadence Cadence => StatCadence.Total;
     // Prefix: the relic only acts when the draw pile holds a Power, and it moves that Power to the hand.
     public static void Prefix(JeweledMask __instance, Player player)
@@ -3088,9 +3267,12 @@ public sealed class JeweledMaskStats : SimpleCounterStats<JeweledMask>
 
 // VelvetChoker: tracks times card limit was hit
 [HarmonyPatch(typeof(VelvetChoker), nameof(VelvetChoker.AfterCardPlayed))]
-public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
+public sealed class VelvetChokerStats : MiscRecordedCounterStats<VelvetChoker>
 {
     public override string Format => "Hit card limit {0} times.";
+    protected override string RecordedKey => "energyGeneratedV1";
+    protected override string RecordedFormat => "Recorded {0} [gold]Energy[/gold] generated.";
+
     private static readonly FieldInfo _cardsPlayedField =
         AccessTools.Field(typeof(VelvetChoker), "_cardsPlayedThisTurn");
 
@@ -3110,6 +3292,9 @@ public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
+        runner.Assert("energy benefit before reaching card limit", () =>
+            new TestResult(RecordedAmount == 1 && Amount == 0,
+                $"expected Energy=1 and limit hits=0, got {RecordedAmount}/{Amount}"));
         runner.Do("energy + god mode + protect enemy + 6 shivs", () => {
             TestHelpers.AddEnergy(10);
             TestHelpers.EnableGodMode();
@@ -3129,7 +3314,7 @@ public sealed class VelvetChokerStats : SimpleCounterStats<VelvetChoker>
         runner.Do("play shiv 6 + end turn", () => TestHelpers.PlayThenEndTurn(1, 0));
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
         runner.Assert("tracked the card limit on the 6th play", () =>
-            new TestResult(Amount == 1, $"expected Amount == 1, got {Amount}"));
+            new TestResult(Amount == 1 && RecordedAmount == 2, $"expected limit hits=1 and two turns of Energy=2, got {Amount}/{RecordedAmount}"));
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -3219,29 +3404,45 @@ internal static class DiamondDiademBeforeSideTurnEndPatch
 }
 
 // BeltBuckle: grants Dexterity when no potions held
-[HarmonyPatch(typeof(BeltBuckle), nameof(BeltBuckle.BeforeCombatStart))]
+[HarmonyPatch]
 public sealed class BeltBuckleStats : SimpleCounterStats<BeltBuckle>
 {
     public override string Format => "Granted {0} [gold]Dexterity[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(BeltBuckle __instance)
+    private static readonly FieldInfo? AppliedField = AccessTools.Field(typeof(BeltBuckle), "_dexterityApplied");
+
+    public static IEnumerable<MethodBase> TargetMethods() =>
+        PatchTarget.DeclaredOrNone(typeof(BeltBuckle), "ApplyDexterity");
+
+    public static void Prefix(BeltBuckle __instance, out bool __state) =>
+        __state = AppliedField != null && !(bool)AppliedField.GetValue(__instance)!;
+
+    public static void Postfix(BeltBuckle __instance, bool __state)
     {
-        if (__instance.Owner.Potions.Any()) return;
+        if (!__state) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Dexterity.IntValue);
     }
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
     {
-        runner.Do("add relic", () => { TestHelpers.ClearPotions(); TestHelpers.AddRelic(RelicId); });
+        runner.Do("add relic", () => { TestHelpers.ClearPotions(); TestHelpers.AddRelic(RelicId); Reset(); });
         runner.Do("start fight", () => TestHelpers.StartFight());
-        runner.WaitFor(GameEvent.CombatStart);
+        runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Assert("tracked dexterity", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Dexterity.IntValue ?? -1;
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
+        runner.Do("procure the last potion", () => TestHelpers.AddPotion("FLEX_POTION"));
+        runner.WaitUntil("one potion procured", () => TestHelpers.Player!.Potions.Count() == 1, 10000);
+        runner.Assert("procurement removes Dexterity without adding a grant", () =>
+            new TestResult(Amount == 2, $"expected initial grant 2, got {Amount}"));
+        runner.Do("use the last potion", () => TestHelpers.UsePotion("FLEX_POTION"));
+        runner.WaitUntil("Dexterity reapplied after last potion use", () => Amount == 4, 10000);
+        runner.Assert("counts the positive reapplication", () =>
+            new TestResult(Amount == 4, $"expected two grants totaling 4, got {Amount}"));
         runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
@@ -3380,3 +3581,14 @@ public sealed class WingedBootsStats : SimpleCounterStats<WingedBoots>
 }
 
 // NOTE: NeowsSacrifice is a 0.108/0.109-beta-only relic; omitted so the mod loads on stable (0.107.1).
+
+[HarmonyPatch(typeof(VelvetChoker), nameof(VelvetChoker.ModifyMaxEnergy))]
+internal static class VelvetChokerEnergyStatsPatch
+{
+    public static void Postfix(VelvetChoker __instance, decimal __result, decimal __1)
+    {
+        int delta = (int)(__result - __1);
+        if (delta <= 0 || !RelicStats.Patches.EnergyGrantScope.IsCounting) return;
+        VelvetChokerStats.Track(__instance, stats => ((VelvetChokerStats)stats).RecordedAmount += delta);
+    }
+}

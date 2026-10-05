@@ -22,6 +22,8 @@ public static class TestManager
     // True from the moment a run starts until EndRun, including the gaps between tests, so a
     // second "relicstats test" cannot start in the middle of a run.
     private static bool _runActive;
+    private static string? _abortReason;
+    private static int _skippedTests;
     public static bool IsRunning => _runActive;
 
     /// <summary>The player's fast mode while a run forces Instant; null when no run holds it.</summary>
@@ -56,6 +58,8 @@ public static class TestManager
         _results.Clear();
         _testQueue.Clear();
         _onAllComplete = onComplete;
+        _abortReason = null;
+        _skippedTests = 0;
         _runActive = true;
         StripPlayerRelics();
         ClearPlayerDeck();
@@ -69,6 +73,8 @@ public static class TestManager
     /// </summary>
     private static void EndRun(string? abortReason = null)
     {
+        _abortReason = abortReason;
+        _skippedTests = abortReason == null ? 0 : _testQueue.Count;
         _testQueue.Clear();
         PersistFailedTests();
         RestoreFastMode();
@@ -77,7 +83,7 @@ public static class TestManager
         var passed = _results.Count(r => r.Result.Passed);
         var failed = _results.Count - passed;
         var summary = $"{passed} passed, {failed} failed (of {_results.Count})";
-        if (abortReason != null) summary += $" — run aborted: {abortReason}";
+        if (_abortReason != null) summary += $" — run aborted: {_abortReason}; {_skippedTests} tests skipped";
         MainFile.Logger.Info($"Test run complete: {summary}");
         _onAllComplete?.Invoke(summary);
     }
@@ -284,8 +290,7 @@ public static class TestManager
     {
         if (_testQueue.Count > 0)
         {
-            var nextId = _testQueue.Dequeue();
-            WaitForCombatSettled(() => StartTest(nextId));
+            WaitForCombatSettled(() => StartTest(_testQueue.Dequeue()));
             return;
         }
 
@@ -312,7 +317,7 @@ public static class TestManager
         }
         bool transitionDone = !TestHelpers.IsRoomTransitionPending;
         bool combatSettled = cm == null || !cm.IsInProgress || TestHelpers.Player?.PlayerCombatState?.Phase == PlayerTurnPhase.Play;
-        if ((transitionDone && combatSettled) || attempts >= 100)
+        if (transitionDone && (combatSettled || attempts >= 100))
         {
             // Always start the next test on a fresh frame. Called straight from the previous
             // test's last signal, it would otherwise start a fight inside that hook's postfix.
@@ -345,6 +350,8 @@ public static class TestManager
         var failed = _results.Count - passed;
         sb.AppendLine($"---");
         sb.AppendLine($"{passed} passed, {failed} failed (of {_results.Count})");
+        if (_abortReason != null)
+            sb.AppendLine($"Run aborted: {_abortReason}; {_skippedTests} tests skipped.");
         return sb.ToString();
     }
 }

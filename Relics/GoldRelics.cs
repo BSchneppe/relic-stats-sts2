@@ -17,7 +17,7 @@ namespace RelicStats.Relics;
 [HarmonyPatch(typeof(AmethystAubergine), nameof(AmethystAubergine.TryModifyRewards))]
 public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergine>
 {
-    public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override string Format => "Offered {0} base [gold]Gold[/gold] in rewards.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(AmethystAubergine __instance, bool __result)
     {
@@ -53,11 +53,12 @@ public sealed class AmethystAubergineStats : SimpleCounterStats<AmethystAubergin
 [HarmonyPatch(typeof(BowlerHat), nameof(BowlerHat.ModifyGoldGained))]
 public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
 {
-    public override string Format => "Gained {0} bonus [gold]Gold[/gold].";
+    public override string Format => "Added {0} [gold]Gold[/gold] to gain calculations before later modifiers.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(BowlerHat __instance, decimal amount, decimal __result, Player player)
     {
         if (player != __instance.Owner) return;
+        if (player.Relics.Any(r => r is Ectoplasm && !r.IsMelted)) return;
         int bonus = (int)(__result - amount);
         if (bonus <= 0) return;
         Track(__instance, s => s.Amount += bonus);
@@ -86,15 +87,18 @@ public sealed class BowlerHatStats : SimpleCounterStats<BowlerHat>
 [HarmonyPatch(typeof(LuckyFysh), nameof(LuckyFysh.AfterCardChangedPiles))]
 public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
 {
-    public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override string Format => "Provided {0} base [gold]Gold[/gold] before gain modifiers.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(LuckyFysh __instance, CardModel card)
     {
         CardPile? pile = card.Pile;
         if (pile == null || pile.Type != PileType.Deck) return;
         if (card.Owner != __instance.Owner) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
+        if (AllowsGold(__instance)) Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
     }
+
+    private static bool AllowsGold(LuckyFysh relic) =>
+        !relic.Owner.Relics.Any(r => r is Ectoplasm && !r.IsMelted);
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)
@@ -129,14 +133,17 @@ public sealed class LuckyFyshStats : SimpleCounterStats<LuckyFysh>
 [HarmonyPatch(typeof(MawBank), nameof(MawBank.AfterRoomEntered))]
 public sealed class MawBankStats : SimpleCounterStats<MawBank>
 {
-    public override string Format => "Gained {0} [gold]Gold[/gold].";
+    public override string Format => "Provided {0} base [gold]Gold[/gold] before gain modifiers.";
     public override StatCadence Cadence => StatCadence.Total;
     public static void Postfix(MawBank __instance, AbstractRoom room)
     {
         if (__instance.HasItemBeenBought) return;
         if (__instance.Owner.RunState.BaseRoom != room) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
+        if (AllowsGold(__instance)) Track(__instance, s => s.Amount += __instance.DynamicVars.Gold.IntValue);
     }
+
+    private static bool AllowsGold(MawBank relic) =>
+        !relic.Owner.Relics.Any(r => r is Ectoplasm && !r.IsMelted);
 
 #if DEBUG
     public override void RegisterTest(TestRunner runner)

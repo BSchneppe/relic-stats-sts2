@@ -1,4 +1,5 @@
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
@@ -15,6 +16,7 @@ public static class WaxMeltPatch
         if (!value) return;
         if (__instance.IsCanonical) return;
         if (__instance.Owner?.RunState == null) return;
+        if (!LocalContext.IsMine(__instance)) return;
         var stats = RelicStatsRegistry.Get(__instance.Id.Entry);
         if (stats == null) return;
         RelicStatsRegistry.SetFloorMelted(__instance.Id.Entry, __instance.Owner.RunState.TotalFloor);

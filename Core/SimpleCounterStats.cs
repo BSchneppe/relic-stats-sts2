@@ -41,7 +41,7 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
     /// </summary>
     protected string FormatStatGreen(int amount) => string.Format(Format, Fmt.Green(amount));
 
-    public string GetDescription(int effectiveTurns, int effectiveCombats)
+    public virtual string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         if (effectiveTurns < 1) effectiveTurns = 1;
         if (effectiveCombats < 1) effectiveCombats = 1;
@@ -60,7 +60,7 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
         return text;
     }
 
-    public JsonObject Save()
+    public virtual JsonObject Save()
     {
         return new JsonObject
         {
@@ -68,12 +68,12 @@ public abstract class SimpleCounterStats<TRelic> : IRelicStats where TRelic : Re
         };
     }
 
-    public void Load(JsonObject data)
+    public virtual void Load(JsonObject data)
     {
         Amount = data["amount"]?.GetValue<int>() ?? 0;
     }
 
-    public void Reset()
+    public virtual void Reset()
     {
         Amount = 0;
     }

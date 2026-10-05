@@ -89,13 +89,13 @@ public sealed class HappyFlowerStats : SimpleCounterStats<HappyFlower>
         AccessTools.Field(typeof(HappyFlower), "_turnsSeen");
 
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(HappyFlower __instance, CombatSide side)
+    public static void Postfix(HappyFlower __instance, IReadOnlyList<Creature> participants)
     {
 #if DEBUG
         if (TestManager.IsRunning)
-            MainFile.Logger.Info($"[HappyFlower Postfix] side={side} ownerSide={__instance.Owner?.Creature?.Side} turnsSeen={(int)TurnsSeenField.GetValue(__instance)!}");
+            MainFile.Logger.Info($"[HappyFlower Postfix] participating={participants.Contains(__instance.Owner!.Creature)} ownerSide={__instance.Owner?.Creature?.Side} turnsSeen={(int)TurnsSeenField.GetValue(__instance)!}");
 #endif
-        if (side != __instance.Owner!.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner!.Creature)) return;
         var turnsSeen = (int)TurnsSeenField.GetValue(__instance)!;
         if (turnsSeen != 0) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
@@ -138,9 +138,9 @@ public sealed class FakeHappyFlowerStats : SimpleCounterStats<FakeHappyFlower>
         AccessTools.Field(typeof(FakeHappyFlower), "_turnsSeen");
 
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(FakeHappyFlower __instance, CombatSide side)
+    public static void Postfix(FakeHappyFlower __instance, IReadOnlyList<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         var turnsSeen = (int)TurnsSeenField.GetValue(__instance)!;
         if (turnsSeen != 0) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
@@ -182,9 +182,9 @@ public sealed class PaelsTearStats : SimpleCounterStats<PaelsTears>
         AccessTools.Field(typeof(PaelsTears), "_hadLeftoverEnergy");
 
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(PaelsTears __instance, CombatSide side)
+    public static void Postfix(PaelsTears __instance, IReadOnlyList<Creature> participants)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (!(bool)HadLeftoverField.GetValue(__instance)!) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
@@ -309,9 +309,9 @@ public sealed class LanternStats : SimpleCounterStats<Lantern>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(Lantern __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(Lantern __instance, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
@@ -343,15 +343,17 @@ public sealed class LanternStats : SimpleCounterStats<Lantern>
 }
 
 // IceCream: preserves energy (tracks when energy reset is prevented)
-[HarmonyPatch(typeof(IceCream), nameof(IceCream.ShouldPlayerResetEnergy))]
-public sealed class IceCreamStats : SimpleCounterStats<IceCream>
+[HarmonyPatch(typeof(PlayerCombatState), nameof(PlayerCombatState.AddMaxEnergyToCurrent))]
+public sealed class IceCreamStats : MeasuredCounterStats<IceCream>
 {
-    public override string Format => "Preserved energy {0} times.";
-    public static void Postfix(IceCream __instance, Player player, bool __result)
+    protected override string PreviousMeasurement => "energy reset vetoes";
+    public override string Format => "Carried {0} [gold]Energy[/gold] into later turns.";
+    public static void Prefix(PlayerCombatState __instance, Player ____player)
     {
-        if (player != __instance.Owner) return;
-        if (__result) return; // energy was reset, relic did not trigger
-        Track(__instance, s => s.Amount++);
+        if (__instance.TurnNumber <= 1) return;
+        var relic = ____player.GetRelic<IceCream>();
+        if (relic == null || __instance.Energy <= 0) return;
+        Track(relic, s => s.Amount += __instance.Energy);
     }
 
 #if DEBUG
@@ -360,16 +362,24 @@ public sealed class IceCreamStats : SimpleCounterStats<IceCream>
         runner.Do("add relic", () => TestHelpers.AddRelic(RelicId));
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
-        // ShouldPlayerResetEnergy returns true on turn 1 (energy IS reset), so nothing is counted yet.
-        runner.Assert("turn 1 resets energy normally", () => new TestResult(Amount == 0, $"expected 0, got {Amount}"));
-        runner.Do("enable god mode + protect enemy", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); });
-        // Turns 2 and 3 keep their energy: one count per turn setup, already run at each PlayerTurnStart.
-        runner.Do("end turn 1", () => TestHelpers.EndTurn());
+        runner.Assert("first turn carries nothing", () => new TestResult(Amount == 0, $"got {Amount}"));
+        runner.Do("end with two energy", () => {
+            DamageMeasurementTestSafety.ProtectPlayer();
+            var state = TestHelpers.Player!.PlayerCombatState!;
+            state.LoseEnergy(state.Energy);
+            state.GainEnergy(2);
+            TestHelpers.EndTurn();
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.Assert("counts carried amount", () => new TestResult(Amount == 2, $"expected 2, got {Amount}"));
+        runner.Do("end with no energy", () => {
+            var state = TestHelpers.Player!.PlayerCombatState!;
+            state.LoseEnergy(state.Energy);
+            TestHelpers.EndTurn();
+        });
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("preserved energy on turns 2 and 3", () => new TestResult(Amount == 2, $"expected 2, got {Amount}"));
-        runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
+        runner.Assert("zero carry adds nothing", () => new TestResult(Amount == 2, $"expected still 2, got {Amount}"));
+        runner.Cleanup(() => { TestHelpers.RemoveRelic(RelicId); Reset(); });
     }
 #endif
 }
@@ -715,9 +725,9 @@ public sealed class BreadStats : IRelicStats
 
     [HarmonyPatch(typeof(Bread), nameof(Bread.AfterSideTurnStart))]
     [HarmonyPostfix]
-    public static void AfterSideTurnStartPostfix(Bread __instance, CombatSide side, ICombatState combatState)
+    public static void AfterSideTurnStartPostfix(Bread __instance, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber != 1) return;
         if (!TryGet(__instance, out var stats)) return;
         stats.EnergyLost += (int)__instance.DynamicVars["LoseEnergy"].BaseValue;
@@ -761,9 +771,9 @@ public sealed class ChandelierStats : SimpleCounterStats<Chandelier>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(Chandelier __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(Chandelier __instance, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber != 3) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
@@ -802,9 +812,9 @@ public sealed class CandelabraStats : SimpleCounterStats<Candelabra>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(Candelabra __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(Candelabra __instance, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber != 2) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
@@ -840,9 +850,9 @@ public sealed class VeryHotCocoaStats : SimpleCounterStats<VeryHotCocoa>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
     public override StatCadence Cadence => StatCadence.Total;
-    public static void Postfix(VeryHotCocoa __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(VeryHotCocoa __instance, IReadOnlyList<Creature> participants, ICombatState combatState)
     {
-        if (side != __instance.Owner.Creature.Side) return;
+        if (!participants.Contains(__instance.Owner.Creature)) return;
         if (__instance.Owner.PlayerCombatState!.TurnNumber > 1) return;
         Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
     }
@@ -954,15 +964,15 @@ public sealed class VenerableTeaSetStats : SimpleCounterStats<VenerableTeaSet>
 }
 
 // PaelsFlesh: gains energy from round 3+
-[HarmonyPatch(typeof(PaelsFlesh), nameof(PaelsFlesh.AfterSideTurnStart))]
+[HarmonyPatch(typeof(PaelsFlesh), nameof(PaelsFlesh.ModifyMaxEnergy))]
 public sealed class PaelsFleshStats : SimpleCounterStats<PaelsFlesh>
 {
     public override string Format => "Generated {0} [gold]Energy[/gold].";
-    public static void Postfix(PaelsFlesh __instance, CombatSide side, ICombatState combatState)
+    public static void Postfix(PaelsFlesh __instance, decimal __result, decimal __1)
     {
-        if (side != __instance.Owner.Creature.Side) return;
-        if (__instance.Owner.PlayerCombatState!.TurnNumber < 3) return;
-        Track(__instance, s => s.Amount += __instance.DynamicVars.Energy.IntValue);
+        int delta = (int)(__result - __1);
+        if (delta <= 0 || !EnergyGrantScope.IsCounting) return;
+        Track(__instance, s => s.Amount += delta);
     }
 
 #if DEBUG
@@ -972,20 +982,24 @@ public sealed class PaelsFleshStats : SimpleCounterStats<PaelsFlesh>
         runner.Do("start fight", () => TestHelpers.StartFight());
         runner.WaitFor(GameEvent.PlayerTurnStart);
         runner.Do("enable god mode + protect enemy", () => { TestHelpers.EnableGodMode(); TestHelpers.ProtectEnemy(); });
-        // Fires in AfterSideTurnStart from turn 3 on. After K EndTurns + PlayerTurnStart, AfterSideTurnStart
-        // has run for turns 1..K only: nothing after two EndTurns, the turn-3 trigger after the third.
-        for (int i = 1; i <= 2; i++)
-        {
-            runner.Do($"end turn {i}", () => TestHelpers.EndTurn());
-            runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        }
-        runner.Assert("nothing before turn 3", () => new TestResult(Amount == 0, $"expected 0, got {Amount}"));
-        runner.Do("end turn 3", () => TestHelpers.EndTurn());
+        // The energy refill runs before PlayerTurnStart and grants the bonus from turn 3 on.
+        runner.Do("end turn 1", () => TestHelpers.EndTurn());
         runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
-        runner.Assert("tracked energy on turn 3", () =>
+        runner.Assert("no bonus on turn 2", () => new TestResult(Amount == 0, $"expected 0, got {Amount}"));
+        runner.Do("end turn 2", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("first bonus granted on turn 3", () =>
         {
             var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
             var expected = relic?.DynamicVars.Energy.IntValue ?? -1;
+            return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
+        });
+        runner.Do("end turn 3", () => TestHelpers.EndTurn());
+        runner.WaitFor(GameEvent.PlayerTurnStart, 15000);
+        runner.Assert("second bonus granted on turn 4", () =>
+        {
+            var relic = TestHelpers.Player!.Relics.FirstOrDefault(r => r.Id.Entry == RelicId);
+            var expected = 2 * (relic?.DynamicVars.Energy.IntValue ?? -1);
             return new TestResult(expected > 0 && Amount == expected, $"expected {expected}, got {Amount}");
         });
         runner.Cleanup(() => { TestHelpers.EnableGodMode(); TestHelpers.RemoveRelic(RelicId); Reset(); });
@@ -1309,7 +1323,7 @@ public sealed class SpikedGauntletsStats : IRelicStats
     public string GetDescription(int effectiveTurns, int effectiveCombats)
     {
         return $"Generated {Fmt.Blue(EnergyGenerated)} [gold]Energy[/gold]. " +
-               $"Increased power costs {Fmt.Blue(PowerCostIncrease)} times.";
+               $"Paid energy for Power surcharges {Fmt.Blue(PowerCostIncrease)} times.";
     }
 
     public JsonObject Save()
@@ -1355,20 +1369,13 @@ public sealed class SpikedGauntletsStats : IRelicStats
         stats.EnergyGenerated += delta;
     }
 
-    // TryModifyEnergyCostInCombat runs on every cost read (hand rendering, hover previews), so counting
-    // there over-counts massively. Count the surcharge once per Power actually played and paid for.
-    [HarmonyPatch(typeof(Hook), nameof(Hook.AfterCardPlayed))]
+    [HarmonyPatch(typeof(Hook), nameof(Hook.AfterEnergySpent))]
     [HarmonyPostfix]
-    public static void AfterCardPlayedPostfix(CardPlay cardPlay)
+    public static void AfterEnergySpentPostfix(CardModel card, int amount)
     {
-        if (cardPlay.Card.Type != CardType.Power) return;
-        // Count only plays that actually spent energy. Auto-plays pass EnergySpent 0, so Whispering
-        // Earring's pre-paid surcharges (it pays, then auto-plays) are missed; a Power made free by
-        // another effect spends 0 too and is no longer counted. Replay repeats (PlayIndex > 0) never pay.
-        if (cardPlay.Resources.EnergySpent <= 0 || cardPlay.PlayIndex != 0) return;
-        var relic = cardPlay.Card.Owner?.GetRelic<SpikedGauntlets>();
-        if (relic == null) return;
-        if (!TryGet(relic, out var stats)) return;
+        if (card.Type != CardType.Power || amount <= 0) return;
+        var relic = card.Owner?.GetRelic<SpikedGauntlets>();
+        if (relic == null || !TryGet(relic, out var stats)) return;
         stats.PowerCostIncrease++;
     }
 

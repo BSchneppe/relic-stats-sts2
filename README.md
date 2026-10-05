@@ -19,6 +19,12 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 2. Place both files in `Slay the Spire 2/mods/RelicStats/`
 3. Launch the game — stats begin tracking when you start a run
 
+## Reading the measurements
+
+Descriptions name the quantity actually recorded. Completed damage counts damage absorbed by Block plus HP lost; the HP portion is capped at the target's remaining HP. Base Block, draw adjustments, damage-value contributions, and opportunities offered describe those contributions rather than claiming a completed effect. Successful potion grants, acquired card upgrades, discards, autoplays, and carried energy are recorded separately from activation counts.
+
+When an update changes a counter's meaning, earlier totals remain separate. New completed-effect totals start with the update; they are not divided by the run's earlier turns or combats. Normal unchanged counters retain their saved totals and applicable averages.
+
 ## Coverage
 
 **184 of 298** relics tracked.
@@ -30,20 +36,20 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 |-------|:-------:|----------------|
 | Akabeko | :white_check_mark: | Gained X Vigor |
 | Alchemical Coffer | | |
-| Amethyst Aubergine | :white_check_mark: | Gained X Gold |
-| Anchor | :white_check_mark: | Gained X Block |
+| Amethyst Aubergine | :white_check_mark: | Offered X base Gold in rewards |
+| Anchor | :white_check_mark: | Provided X base Block |
 | Arcane Scroll | | |
 | Archaic Tooth | | |
 | Art Of War | :white_check_mark: | Complex tracking |
 | Astrolabe | | |
-| Bag Of Marbles | :white_check_mark: | Applied Vulnerable X times |
-| Bag Of Preparation | :white_check_mark: | Drew X additional cards |
+| Bag Of Marbles | :white_check_mark: | Requested Vulnerable applications X times |
+| Bag Of Preparation | :white_check_mark: | Increased requested hand draws by X |
 | Beating Remnant | | |
 | Beautiful Bracelet | | |
-| Bellows | :white_check_mark: | Upgraded X hands |
+| Bellows | :white_check_mark: | Used the hand upgrade effect X times |
 | Belt Buckle | :white_check_mark: | Granted X Dexterity |
-| Big Hat | :white_check_mark: | Generated X Ethereal cards |
-| Big Mushroom | :white_check_mark: | Drew X fewer cards |
+| Big Hat | :white_check_mark: | Requested X distinct Ethereal cards for generation |
+| Big Mushroom | :white_check_mark: | Reduced requested hand draws by X |
 | Biiig Hug | :white_check_mark: | Added X soot cards |
 | Bing Bong | :white_check_mark: | Duplicated X cards |
 | Black Blood | :white_check_mark: | Healed X HP |
@@ -51,13 +57,13 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Blessed Antler | :white_check_mark: | Complex tracking |
 | Blood Soaked Rose | :white_check_mark: | Complex tracking |
 | Blood Vial | :white_check_mark: | Healed X HP |
-| Bone Flute | :white_check_mark: | Gained X Block |
+| Bone Flute | :white_check_mark: | Provided X base Block |
 | Book Of Five Rings | :white_check_mark: | Healed X HP from adding cards |
 | Book Repair Knife | :white_check_mark: | Healed X HP |
-| Bookmark | :white_check_mark: | Reduced card costs X times |
-| Booming Conch | :white_check_mark: | Drew X additional cards |
+| Bookmark | :white_check_mark: | Reduced retained card costs X times |
+| Booming Conch | :white_check_mark: | Increased requested hand draws by X |
 | Bound Phylactery | | |
-| Bowler Hat | :white_check_mark: | Gained X bonus Gold |
+| Bowler Hat | :white_check_mark: | Added X Gold to gain calculations before later modifiers |
 | Bread | :white_check_mark: | Complex tracking |
 | Brilliant Scarf | | |
 | Brimstone | :white_check_mark: | Gained X Strength |
@@ -67,24 +73,24 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Byrdpip | | |
 | Calling Bell | | |
 | Candelabra | :white_check_mark: | Generated X Energy |
-| Captains Wheel | :white_check_mark: | Gained X Block |
+| Captains Wheel | :white_check_mark: | Provided X base Block |
 | Cauldron | | |
 | Centennial Puzzle | :white_check_mark: | Drew X cards on hit |
 | Chandelier | :white_check_mark: | Generated X Energy |
 | Charons Ashes | :white_check_mark: | Dealt X Damage |
 | Chemical X | :white_check_mark: | Added X to X values |
-| Choices Paradox | :white_check_mark: | Generated X cards to choose from |
+| Choices Paradox | :white_check_mark: | Used the card selection effect X times |
 | Chosen Cheese | :white_check_mark: | Gained X max HP |
 | Circlet | | |
 | Claws | | |
-| Cloak Clasp | :white_check_mark: | Gained X Block |
+| Cloak Clasp | :white_check_mark: | Provided X base Block |
 | Cracked Core | :white_check_mark: | Channeled X Lightning orbs |
 | Crossbow | :white_check_mark: | Generated X free attacks |
 | Cursed Pearl | | |
 | Darkstone Periapt | :white_check_mark: | Gained X max HP |
 | Data Disk | :white_check_mark: | Applied X Focus |
-| Daughter Of The Wind | :white_check_mark: | Gained X Block |
-| Delicate Frond | :white_check_mark: | Generated potions X times |
+| Daughter Of The Wind | :white_check_mark: | Provided X base Block |
+| Delicate Frond | :white_check_mark: | Potions successfully provided and generation activations |
 | Demon Tongue | :white_check_mark: | Healed X HP |
 | Deprecated Relic | | |
 | Diamond Diadem | :white_check_mark: | Applied DiamondDiademPower X times |
@@ -103,19 +109,19 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Emotion Chip | | |
 | Empty Cage | | |
 | Eternal Feather | :white_check_mark: | Healed X HP |
-| Fake Anchor | :white_check_mark: | Gained X Block |
+| Fake Anchor | :white_check_mark: | Provided X base Block |
 | Fake Blood Vial | :white_check_mark: | Healed X HP |
 | Fake Happy Flower | :white_check_mark: | Generated X Energy |
 | Fake Lees Waffle | | |
 | Fake Mango | | |
 | Fake Merchants Rug | | |
-| Fake Orichalcum | :white_check_mark: | Gained X Block |
+| Fake Orichalcum | :white_check_mark: | Provided X base Block |
 | Fake Snecko Eye | :white_check_mark: | Applied Confused X times |
-| Fake Strike Dummy | :white_check_mark: | Added X Damage to Strikes |
+| Fake Strike Dummy | :white_check_mark: | Added X to applicable attack damage values |
 | Fake Venerable Tea Set | :white_check_mark: | Generated X Energy |
 | Fencing Manual | :white_check_mark: | Gained X Forge |
 | Festive Popper | :white_check_mark: | Dealt X Damage |
-| Fiddle | :white_check_mark: | Drew X additional cards |
+| Fiddle | :white_check_mark: | Increased requested hand draws by X |
 | Fishing Rod | :white_check_mark: | Upgraded X cards |
 | Forgotten Soul | :white_check_mark: | Dealt X Damage |
 | Fragrant Mushroom | | |
@@ -124,7 +130,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Funerary Mask | :white_check_mark: | Generated X Soul cards |
 | Fur Coat | | |
 | Galactic Dust | | |
-| Gambling Chip | :white_check_mark: | Swapped X cards |
+| Gambling Chip | :white_check_mark: | Selected cards actually discarded and earlier swap attempts |
 | Game Piece | :white_check_mark: | Drew X cards from Powers |
 | Ghost Seed | | |
 | Girya | :white_check_mark: | Gained X Strength |
@@ -135,19 +141,19 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Golden Compass | | |
 | Golden Pearl | | |
 | Gorget | :white_check_mark: | Gained X Plating |
-| Gremlin Horn | :white_check_mark: | Triggered X times (drew cards + gained Energy) |
-| Hand Drill | :white_check_mark: | Applied Vulnerable X times |
+| Gremlin Horn | :white_check_mark: | Activated X times after a kill |
+| Hand Drill | :white_check_mark: | Requested Vulnerable applications X times |
 | Happy Flower | :white_check_mark: | Generated X Energy |
 | Hefty Tablet | | |
 | Helical Dart | :white_check_mark: | Gained X Dexterity from Shivs |
 | History Course | :white_check_mark: | Auto-replayed X cards |
-| Horn Cleat | :white_check_mark: | Gained X Block |
-| Ice Cream | :white_check_mark: | Preserved energy X times |
+| Horn Cleat | :white_check_mark: | Provided X base Block |
+| Ice Cream | :white_check_mark: | Unspent Energy actually carried into the next turn |
 | Infused Core | :white_check_mark: | Channeled X Lightning orbs |
-| Intimidating Helmet | :white_check_mark: | Gained X Block |
+| Intimidating Helmet | :white_check_mark: | Provided X base Block |
 | Iron Club | :white_check_mark: | Drew X cards |
 | Ivory Tile | | |
-| Jeweled Mask | :white_check_mark: | Drew X free Powers |
+| Jeweled Mask | :white_check_mark: | Moved free Power card opportunities to hand |
 | Jewelry Box | | |
 | Joss Paper | :white_check_mark: | Drew X cards |
 | Juzu Bracelet | | |
@@ -158,7 +164,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Lantern | :white_check_mark: | Generated X Energy |
 | Large Capsule | | |
 | Lasting Candy | :white_check_mark: | Added X extra Power cards to rewards |
-| Lava Lamp | :white_check_mark: | Upgraded card rewards X times |
+| Lava Lamp | :white_check_mark: | Used the upgrade effect X times |
 | Lava Rock | | |
 | Lead Paperweight | | |
 | Leafy Poultice | | |
@@ -169,11 +175,11 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Lords Parasol | | |
 | Lost Coffer | | |
 | Lost Wisp | :white_check_mark: | Dealt X Damage |
-| Lucky Fysh | :white_check_mark: | Gained X Gold |
+| Lucky Fysh | :white_check_mark: | Provided X base Gold before gain modifiers |
 | Lunar Pastry | :white_check_mark: | Gained X Stars |
 | Mango | | |
 | Massive Scroll | | |
-| Maw Bank | :white_check_mark: | Gained X Gold |
+| Maw Bank | :white_check_mark: | Provided X base Gold before gain modifiers |
 | Meal Ticket | :white_check_mark: | Healed X HP |
 | Meat Cleaver | | |
 | Meat On The Bone | :white_check_mark: | Healed X HP |
@@ -181,13 +187,13 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Mercury Hourglass | :white_check_mark: | Dealt X Damage |
 | Metronome | | |
 | Mini Regent | :white_check_mark: | Gained X Strength |
-| Miniature Cannon | :white_check_mark: | Added X Damage to upgraded attacks |
+| Miniature Cannon | :white_check_mark: | Added X to applicable attack damage values |
 | Miniature Tent | | |
 | Molten Egg | :white_check_mark: | Upgraded X attack cards |
 | Mr Struggles | :white_check_mark: | Dealt X Damage |
 | Mummified Hand | :white_check_mark: | Made X cards free |
 | Music Box | :white_check_mark: | Copied X attacks as Ethereal |
-| Mystic Lighter | :white_check_mark: | Added X Damage to enchanted attacks |
+| Mystic Lighter | :white_check_mark: | Added X to applicable attack damage values |
 | Neows Bones | | |
 | Neows Talisman | | |
 | Neows Torment | | |
@@ -199,12 +205,12 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Oddly Smooth Stone | :white_check_mark: | Applied X Dexterity |
 | Old Coin | | |
 | Orange Dough | :white_check_mark: | Added X colorless cards |
-| Orichalcum | :white_check_mark: | Gained X Block |
+| Orichalcum | :white_check_mark: | Provided X base Block |
 | Ornamental Fan | :white_check_mark: | Complex tracking |
 | Orrery | | |
-| Paels Blood | :white_check_mark: | Drew X additional cards |
+| Paels Blood | :white_check_mark: | Increased requested hand draws by X |
 | Paels Claw | | |
-| Paels Eye | :white_check_mark: | Complex tracking |
+| Paels Eye | :white_check_mark: | Cards actually exhausted and earlier exhaust requests |
 | Paels Flesh | :white_check_mark: | Generated X Energy |
 | Paels Growth | | |
 | Paels Horn | | |
@@ -220,14 +226,14 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Pear | | |
 | Pen Nib | :white_check_mark: | Complex tracking |
 | Pendulum | :white_check_mark: | Drew X cards |
-| Permafrost | :white_check_mark: | Gained X Block |
+| Permafrost | :white_check_mark: | Provided X base Block |
 | Petrified Toad | :white_check_mark: | Generated X potions |
 | Phial Holster | | |
 | Philosophers Stone | :white_check_mark: | Complex tracking |
-| Phylactery Unbound | :white_check_mark: | Complex tracking |
+| Phylactery Unbound | :white_check_mark: | Total Osty HP summoned |
 | Planisphere | :white_check_mark: | Healed X HP |
-| Pocketwatch | :white_check_mark: | Drew X additional cards |
-| Pollinous Core | :white_check_mark: | Drew X additional cards |
+| Pocketwatch | :white_check_mark: | Increased requested hand draws by X |
+| Pollinous Core | :white_check_mark: | Increased requested hand draws by X |
 | Pomander | | |
 | Potion Belt | | |
 | Power Cell | | |
@@ -241,33 +247,33 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Radiant Pearl | :white_check_mark: | Generated X Luminesce cards |
 | Rainbow Ring | | |
 | Razor Tooth | :white_check_mark: | Upgraded X cards |
-| Red Mask | :white_check_mark: | Applied weakness X times |
+| Red Mask | :white_check_mark: | Requested Weak applications X times |
 | Red Skull | | |
 | Regal Pillow | :white_check_mark: | Healed X extra HP |
-| Regalite | :white_check_mark: | Gained X Block |
+| Regalite | :white_check_mark: | Provided X base Block |
 | Reptile Trinket | :white_check_mark: | Gained X temporary Strength from potions |
-| Ring Of The Drake | :white_check_mark: | Drew X additional cards |
-| Ring Of The Snake | :white_check_mark: | Drew X additional cards |
-| Ringing Triangle | :white_check_mark: | Retained hand X times |
-| Ripple Basin | :white_check_mark: | Gained X Block |
-| Royal Poison | :white_check_mark: | Dealt X Damage to self |
+| Ring Of The Drake | :white_check_mark: | Increased requested hand draws by X |
+| Ring Of The Snake | :white_check_mark: | Increased requested hand draws by X |
+| Ringing Triangle | :white_check_mark: | Preserved X otherwise-discardable cards |
+| Ripple Basin | :white_check_mark: | Provided X base Block |
+| Royal Poison | :white_check_mark: | Actual self-damage HP lost and Strength effect activations |
 | Royal Stamp | | |
 | Ruined Helmet | :white_check_mark: | Doubled strength X times |
-| Runic Capacitor | :white_check_mark: | Added X orb slots |
-| Runic Pyramid | :white_check_mark: | Retained hand X times |
-| Sai | :white_check_mark: | Gained X Block |
+| Runic Capacitor | :white_check_mark: | Requested X additional orb slots |
+| Runic Pyramid | :white_check_mark: | Preserved X otherwise-discardable cards |
+| Sai | :white_check_mark: | Provided X base Block |
 | Sand Castle | | |
 | Screaming Flagon | :white_check_mark: | Dealt X Damage |
 | Scroll Boxes | | |
 | Sea Glass | | |
 | Seal Of Gold | :white_check_mark: | Complex tracking |
-| Self Forming Clay | :white_check_mark: | Gained X Block |
+| Self Forming Clay | :white_check_mark: | Queued X base Block for next turn |
 | Sere Talon | | |
-| Shovel | :white_check_mark: | Offered dig X times |
+| Shovel | :white_check_mark: | Completed Digs and Dig options offered |
 | Shuriken | :white_check_mark: | Gained X Strength |
 | Signet Ring | | |
 | Silken Tress | | |
-| Silver Crucible | :white_check_mark: | Upgraded card rewards X times |
+| Silver Crucible | :white_check_mark: | Processed reward batches |
 | Sling Of Courage | :white_check_mark: | Gained X Strength |
 | Small Capsule | | |
 | Snecko Eye | :white_check_mark: | Complex tracking |
@@ -280,15 +286,15 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Stone Humidifier | :white_check_mark: | Gained X Max HP |
 | Storybook | | |
 | Strawberry | | |
-| Strike Dummy | :white_check_mark: | Added X Damage to Strikes |
+| Strike Dummy | :white_check_mark: | Added X to applicable attack damage values |
 | Sturdy Clamp | | |
 | Sword Of Jade | :white_check_mark: | Applied X Strength |
 | Sword Of Stone | :white_check_mark: | Defeated X elites |
 | Symbiotic Virus | :white_check_mark: | Channeled X Dark orbs |
 | Tanxs Whistle | | |
 | Tea Of Discourtesy | | |
-| The Abacus | :white_check_mark: | Gained X Block |
-| The Boot | :white_check_mark: | Boosted damage to 5 X times |
+| The Abacus | :white_check_mark: | Provided X base Block |
+| The Boot | :white_check_mark: | Added X damage to owner and Osty hits |
 | The Courier | | |
 | Throwing Axe | :white_check_mark: | Doubled first card X times |
 | Tingsha | :white_check_mark: | Dealt X Damage |
@@ -296,12 +302,12 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Toasty Mittens | :white_check_mark: | Gained X Strength and exhausted cards |
 | Toolbox | :white_check_mark: | Offered cards X times |
 | Touch Of Orobas | | |
-| Tough Bandages | :white_check_mark: | Gained X Block |
+| Tough Bandages | :white_check_mark: | Provided X base Block |
 | Toxic Egg | :white_check_mark: | Upgraded X skill cards |
 | Toy Box | | |
 | Tri Boomerang | | |
 | Tungsten Rod | :white_check_mark: | Prevented X HP loss |
-| Tuning Fork | :white_check_mark: | Gained X Block |
+| Tuning Fork | :white_check_mark: | Provided X base Block |
 | Twisted Funnel | :white_check_mark: | Applied X Poison |
 | Unceasing Top | :white_check_mark: | Drew X cards from empty hand |
 | Undying Sigil | | |
@@ -309,7 +315,7 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | Vajra | :white_check_mark: | Gained X Strength |
 | Vakuu Card Selector | | |
 | Vambrace | :white_check_mark: | Doubled first Block X times |
-| Velvet Choker | :white_check_mark: | Hit card limit X times |
+| Velvet Choker | :white_check_mark: | Energy granted and card limit activations |
 | Venerable Tea Set | :white_check_mark: | Generated X Energy |
 | Very Hot Cocoa | :white_check_mark: | Generated X Energy |
 | Vexing Puzzlebox | :white_check_mark: | Generated X free cards |
@@ -317,13 +323,13 @@ Relic Stats uses Slay the Spire 2's built-in mod loader — no other mods are re
 | War Hammer | :white_check_mark: | Upgraded X cards after elite combats |
 | War Paint | | |
 | Whetstone | | |
-| Whispering Earring | :white_check_mark: | Triggered X times |
+| Whispering Earring | :white_check_mark: | Completed automatic plays and Energy generated |
 | White Beast Statue | | |
 | White Star | | |
 | Wing Charm | | |
 | Winged Boots | :white_check_mark: | Used X free travels |
 | Wongo Customer Appreciation Badge | | |
-| Wongos Mystery Ticket | :white_check_mark: | Completed X combats toward relic |
+| Wongos Mystery Ticket | :white_check_mark: | Lifetime qualifying combats |
 | Yummy Cookie | | |
 
 </details>
@@ -353,7 +359,7 @@ The output DLL and manifest are automatically copied to your mods directory.
 
 ### Unit tests
 
-Pure logic tests (description formatting, JSON persistence) that don't require the game:
+Production helper and counter tests cover asynchronous attribution, acquisition provenance, history denominators, description formatting, and JSON persistence without requiring the game:
 
 ```bash
 dotnet test tests/
