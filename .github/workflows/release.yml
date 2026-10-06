@@ -30,7 +30,9 @@ jobs:
             dotnet run --project tools/PatchAudit -- . \
               ~/.nuget/packages/bschneppe.sts2.referenceassemblies/"$ref"/ref/net9.0/sts2.dll \
               --allow-missing RunManager.InitializeNewRun \
-              --allow-missing NRunHistory.DisplayRun
+              --allow-missing NRunHistory.DisplayRun \
+              --allow-missing BeltBuckle.ApplyDexterity \
+              --allow-missing FakeSneckoEye.ApplyPower
           done
 
       - name: Upload artifact
