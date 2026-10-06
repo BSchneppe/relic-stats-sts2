@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -15,6 +15,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../Core/DirectDrawScope.cs" Link="Production/DirectDrawScope.cs" />
+    <Compile Include="../Core/EffectScope.cs" Link="Production/EffectScope.cs" />
+    <Compile Include="../Core/CombatHistoryTotals.cs" Link="Production/CombatHistoryTotals.cs" />
+    <Compile Include="../Core/AutoPlayScope.cs" Link="Production/AutoPlayScope.cs" />
+    <Compile Include="../Core/ChipDiscardScope.cs" Link="Production/ChipDiscardScope.cs" />
+    <Compile Include="../Core/RestHealScope.cs" Link="Production/RestHealScope.cs" />
+    <Compile Include="../Core/RelicMeasurementMath.cs" Link="Production/RelicMeasurementMath.cs" />
+    <Compile Include="../Core/CardAcquisitionLedger.cs" Link="Production/CardAcquisitionLedger.cs" />
     <Using Include="Xunit" />
   </ItemGroup>
 

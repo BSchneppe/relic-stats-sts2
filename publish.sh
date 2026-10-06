@@ -23,8 +23,11 @@ set -euo pipefail
 APP_ID="2868840"                       
 PUBLISHED_FILE_ID="3766484698" # leave empty; auto-created & saved on first run
 STEAM_USER="${STEAM_USER:-}"               # TODO: Steam builder account (required)
-VISIBILITY="${VISIBILITY:-2}"              # 0=public 1=friends 2=private 3=unlisted
-DOTNET="${DOTNET:-dotnet}"                 # override if dotnet isn't on PATH
+# 0=public 1=friends 2=private 3=unlisted. Applied only when creating a new item; an update
+# leaves the item's current visibility alone unless VISIBILITY is set explicitly. Emitting it
+# unconditionally would silently take an already-public item private on the next content update.
+VISIBILITY="${VISIBILITY:-}"
+DOTNET="${DOTNET:-}"                       # auto-detected below; export DOTNET=... to override
 PREVIEW="${PREVIEW:-workshop_preview.png}" # optional; used only if the file exists
 # ───────────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,23 @@ err() { echo "error: $*" >&2; exit 1; }
 
 [[ -n "$APP_ID" ]] || err "APP_ID is not set (edit publish.sh or export APP_ID=...)."
 [[ -n "$STEAM_USER" ]] || err "STEAM_USER is not set (export STEAM_USER=your_builder_account)."
+
+# Locate dotnet. A dotnet installed to ~/.dotnet is not on PATH for non-login shells, so fall
+# back to the usual install locations before giving up.
+has_usable_sdk() {
+  "$1" --list-sdks 2>/dev/null | awk -F. '$1 + 0 >= 9 { found = 1 } END { exit !found }'
+}
+if [[ -z "$DOTNET" ]]; then
+  for cand in "$(command -v dotnet || true)" "$HOME/.dotnet/dotnet" "/usr/local/share/dotnet/dotnet" "/opt/homebrew/bin/dotnet"; do
+    if [[ -n "$cand" && -x "$cand" ]] && has_usable_sdk "$cand"; then
+      DOTNET="$cand"
+      break
+    fi
+  done
+fi
+[[ -n "$DOTNET" ]] || err "dotnet not found (looked on PATH, ~/.dotnet, /usr/local/share/dotnet, /opt/homebrew/bin). Export DOTNET=/path/to/dotnet."
+has_usable_sdk "$DOTNET" || err "The selected dotnet has no .NET 9 or newer SDK. Export DOTNET=/path/to/a/supported/dotnet."
+echo ">> Using dotnet: $DOTNET"
 
 # Locate steamcmd
 STEAMCMD="$(command -v steamcmd || true)"
@@ -92,7 +112,12 @@ VDF="$REPO/build/workshop_item.vdf"
   echo "    \"appid\"           \"$APP_ID\""
   echo "    \"publishedfileid\" \"${PUBLISHED_FILE_ID:-0}\""
   echo "    \"contentfolder\"   \"$CONTENT\""
-  echo "    \"visibility\"      \"$VISIBILITY\""
+  # Default a new item to private so it is never published before it has been checked.
+  if $CREATING; then
+    echo "    \"visibility\"      \"${VISIBILITY:-2}\""
+  elif [[ -n "$VISIBILITY" ]]; then
+    echo "    \"visibility\"      \"$VISIBILITY\""
+  fi
   echo "    \"title\"           \"Relic Stats\""
   echo "    \"changenote\"      \"$CHANGENOTE\""
   if [[ -f "$REPO/$PREVIEW" ]]; then
@@ -123,7 +148,7 @@ if $CREATING; then
     echo "$NEW_ID" > "$ID_FILE"
     echo ">> Created Workshop item $NEW_ID (saved to $ID_FILE)."
     echo ">> Workshop URL: https://steamcommunity.com/sharedfiles/filedetails/?id=$NEW_ID"
-    echo ">> NOTE: new items default to the visibility set above (VISIBILITY=$VISIBILITY);"
+    echo ">> NOTE: new item visibility is ${VISIBILITY:-2} (0=public, 1=friends, 2=private, 3=unlisted);"
     echo ">>       set the supported game-version range once on the Steamworks partner site."
   else
     echo ">> Could not parse the new item ID from steamcmd output ($LOG)."

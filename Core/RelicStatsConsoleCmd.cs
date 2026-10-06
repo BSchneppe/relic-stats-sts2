@@ -86,6 +86,11 @@ public class RelicStatsConsoleCmd : AbstractConsoleCmd
 #if DEBUG
     private static CmdResult ProcessTest(Player? issuingPlayer, string[] args)
     {
+        if (issuingPlayer == null && !(args.Length > 1 && args[1].Equals("results", StringComparison.OrdinalIgnoreCase)))
+            // Issued from the menu or while a saved run is still loading: every test would dereference
+            // a null player, and the run would change settings (fast mode) it then never restores.
+            return new CmdResult(false, "No run in progress. Start or continue a run before running tests.");
+
         TestHelpers.Player = issuingPlayer;
 
         if (args.Length > 1 && args[1].Equals("results", StringComparison.OrdinalIgnoreCase))

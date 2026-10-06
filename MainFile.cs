@@ -89,7 +89,7 @@ public partial class MainFile : Node
 
     /// <summary>
     /// Logs any relic left with no live patch, which means its stats are dead rather than zero.
-    /// Every stats class patches at least one method on its own relic type.
+    /// Most trackers patch their relic; command-based trackers need their live command patch checked.
     /// </summary>
     private static void ReportUntrackedRelics(Harmony harmony)
     {
@@ -98,6 +98,14 @@ public partial class MainFile : Node
             .Where(type => type != null && typeof(RelicModel).IsAssignableFrom(type))
             .Select(type => RelicIdHelper.Slugify(type!.Name))
             .ToHashSet();
+
+        // Ice Cream measures the actual refill rather than the relic's reset veto. Only
+        // recognize it when its own prefix was applied, not merely another refill patch.
+        var refill = AccessTools.DeclaredMethod(typeof(MegaCrit.Sts2.Core.Entities.Players.PlayerCombatState),
+            nameof(MegaCrit.Sts2.Core.Entities.Players.PlayerCombatState.AddMaxEnergyToCurrent));
+        if (refill != null && Harmony.GetPatchInfo(refill)?.Prefixes.Any(patch =>
+                patch.owner == harmony.Id && patch.PatchMethod.DeclaringType == typeof(Relics.IceCreamStats)) == true)
+            patchedRelics.Add("ICE_CREAM");
 
         // Registry entries that are not real relics (the DEBUG-only harness tests) never patch a
         // RelicModel and would otherwise always be reported.

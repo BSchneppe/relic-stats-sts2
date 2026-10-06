@@ -1,5 +1,7 @@
 #if DEBUG
 using System.Linq;
+using System.Text.Json.Nodes;
+using MegaCrit.Sts2.Core.Models.Relics;
 
 namespace RelicStats.Core.Testing;
 
@@ -45,10 +47,44 @@ public sealed class SaveLoadAveragesTest : ValidationTest
             return new TestResult(false, "stats not found");
         });
 
+        runner.Do("migrate legacy nominal damage and persist completed damage", () =>
+        {
+            var stats = (SimpleCounterStats<CharonsAshes>)RelicStatsRegistry.Get("CHARONS_ASHES")!;
+            stats.Load(new JsonObject { ["amount"] = 99 });
+        });
+
+        runner.Assert("old damage remains separate from the completed measurement", () =>
+        {
+            var stats = (SimpleCounterStats<CharonsAshes>)RelicStatsRegistry.Get("CHARONS_ASHES")!;
+            var saved = stats.Save();
+            return new TestResult(stats.Amount == 0 && saved["previousAmount"]?.GetValue<int>() == 99
+                && stats.GetDescription(10, 5).Contains("Measured since update."),
+                $"completed={stats.Amount}, saved={saved}");
+        });
+
+        runner.Do("round trip both damage generations", () =>
+        {
+            var stats = (SimpleCounterStats<CharonsAshes>)RelicStatsRegistry.Get("CHARONS_ASHES")!;
+            stats.Amount = 17;
+            var saved = stats.Save();
+            stats.Reset();
+            stats.Load(saved);
+        });
+
+        runner.Assert("completed and earlier nominal damage both survive", () =>
+        {
+            var stats = (SimpleCounterStats<CharonsAshes>)RelicStatsRegistry.Get("CHARONS_ASHES")!;
+            var saved = stats.Save();
+            return new TestResult(stats.Amount == 17 && saved["previousAmount"]?.GetValue<int>() == 99
+                && saved["measurementVersion"]?.GetValue<int>() == 1,
+                $"completed={stats.Amount}, saved={saved}");
+        });
+
         runner.Cleanup(() =>
         {
             TestHelpers.RemoveRelic("ANCHOR");
             RelicStatsRegistry.Get("ANCHOR")?.Reset();
+            RelicStatsRegistry.Get("CHARONS_ASHES")?.Reset();
         });
     }
 }

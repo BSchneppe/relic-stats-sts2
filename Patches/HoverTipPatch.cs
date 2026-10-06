@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
@@ -22,6 +23,7 @@ public static class HoverTipsPatch
         // Distinguish active run vs history display:
         // History players are created via Player.CreateForNewRun and have NullRunState.
         var isActiveRun = __instance.Owner.RunState is not NullRunState;
+        if (isActiveRun && !LocalContext.IsMine(__instance)) return;
         var relicId = __instance.Id.Entry;
         var floorText = $"Floor obtained: {__instance.FloorAddedToDeck}";
         string statsText;

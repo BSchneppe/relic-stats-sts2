@@ -7,6 +7,8 @@ using System.Text;
 using Godot;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.Core.Settings;
 using Environment = System.Environment;
 
 namespace RelicStats.Core.Testing;
@@ -17,7 +19,19 @@ public static class TestManager
     private static readonly Queue<string> _testQueue = new();
     private static readonly List<(string RelicId, TestResult Result)> _results = new();
     private static Action<string>? _onAllComplete;
-    public static bool IsRunning => _activeRunner != null && !_activeRunner.IsComplete;
+    // True from the moment a run starts until EndRun, including the gaps between tests, so a
+    // second "relicstats test" cannot start in the middle of a run.
+    private static bool _runActive;
+    private static string? _abortReason;
+    private static int _skippedTests;
+    public static bool IsRunning => _runActive;
+
+    /// <summary>The player's fast mode while a run forces Instant; null when no run holds it.</summary>
+    internal static FastModeType? SavedFastMode => _savedFastMode;
+
+    // A room transition running this long is stuck (an event exit waiting on an option that will
+    // never resolve); every later test would fail behind it, so the run is aborted instead.
+    private const double StuckTransitionSeconds = 15;
     private static SceneTreeTimer? _tickTimer;
 
     public static IReadOnlyList<(string RelicId, TestResult Result)> LastResults => _results;
@@ -36,18 +50,71 @@ public static class TestManager
     }
 
 
-    private static void PrepareTestRun()
-    {
-        StripPlayerRelics();
-        ClearPlayerDeck();
-    }
+    // The player's fast-mode preference, saved while a test run forces Instant.
+    private static FastModeType? _savedFastMode;
 
-    public static void RunSingle(string relicId, Action<string>? onComplete = null)
+    private static void BeginRun(Action<string>? onComplete)
     {
         _results.Clear();
         _testQueue.Clear();
         _onAllComplete = onComplete;
-        PrepareTestRun();
+        _abortReason = null;
+        _skippedTests = 0;
+        _runActive = true;
+        StripPlayerRelics();
+        ClearPlayerDeck();
+        EnableInstantMode();
+    }
+
+    /// <summary>
+    /// The single exit of a run: persists failures, gives the player their fast mode back and
+    /// reports. Every path that ends a run — all tests done, an aborted run, a test that threw —
+    /// comes through here, so a run can never leave Instant mode behind.
+    /// </summary>
+    private static void EndRun(string? abortReason = null)
+    {
+        _abortReason = abortReason;
+        _skippedTests = abortReason == null ? 0 : _testQueue.Count;
+        _testQueue.Clear();
+        PersistFailedTests();
+        RestoreFastMode();
+        _runActive = false;
+
+        var passed = _results.Count(r => r.Result.Passed);
+        var failed = _results.Count - passed;
+        var summary = $"{passed} passed, {failed} failed (of {_results.Count})";
+        if (_abortReason != null) summary += $" — run aborted: {_abortReason}; {_skippedTests} tests skipped";
+        MainFile.Logger.Info($"Test run complete: {summary}");
+        _onAllComplete?.Invoke(summary);
+    }
+
+    /// <summary>
+    /// Runs the whole test run with the game's Instant fast mode: every Cmd.Wait (card and power
+    /// animations, the 1s relic flashes, turn transitions) returns immediately instead of waiting
+    /// on a timer. Without it most of a run's wall time is animation. The player's own setting is
+    /// restored when the run completes.
+    /// </summary>
+    private static void EnableInstantMode()
+    {
+        var prefs = SaveManager.Instance?.PrefsSave;
+        if (prefs == null) return;
+        _savedFastMode ??= prefs.FastMode;
+        prefs.FastMode = FastModeType.Instant;
+        MainFile.Logger.Info($"[TestManager] fast mode Instant for the test run (was {_savedFastMode})");
+    }
+
+    private static void RestoreFastMode()
+    {
+        var prefs = SaveManager.Instance?.PrefsSave;
+        if (prefs == null || _savedFastMode == null) return;
+        prefs.FastMode = _savedFastMode.Value;
+        MainFile.Logger.Info($"[TestManager] fast mode restored to {_savedFastMode}");
+        _savedFastMode = null;
+    }
+
+    public static void RunSingle(string relicId, Action<string>? onComplete = null)
+    {
+        BeginRun(onComplete);
         StartTest(relicId);
     }
 
@@ -57,40 +124,50 @@ public static class TestManager
         if (failedIds.Count == 0)
             failedIds = LoadPersistedFailures();
 
-        _results.Clear();
-        _testQueue.Clear();
-        _onAllComplete = onComplete;
-        PrepareTestRun();
+        // Nothing to rerun: leave the player's run (relics, deck, fast mode) untouched.
+        if (failedIds.Count == 0)
+        {
+            onComplete?.Invoke("No failed tests to rerun.");
+            return;
+        }
 
+        BeginRun(onComplete);
         foreach (var id in failedIds)
             _testQueue.Enqueue(id);
-
-        if (_testQueue.Count > 0)
-        {
-            MainFile.Logger.Info($"Rerunning {failedIds.Count} failed tests...");
-            StartTest(_testQueue.Dequeue());
-        }
-        else
-            onComplete?.Invoke("No failed tests to rerun.");
+        MainFile.Logger.Info($"Rerunning {failedIds.Count} failed tests...");
+        StartTest(_testQueue.Dequeue());
     }
 
     public static void RunAll(Action<string>? onComplete = null)
     {
-        _results.Clear();
-        _testQueue.Clear();
-        _onAllComplete = onComplete;
-        PrepareTestRun();
+        if (RelicStatsRegistry.All.Count == 0)
+        {
+            onComplete?.Invoke("No relics registered.");
+            return;
+        }
 
+        BeginRun(onComplete);
         foreach (var (id, _) in RelicStatsRegistry.All)
             _testQueue.Enqueue(id);
-
-        if (_testQueue.Count > 0)
-            StartTest(_testQueue.Dequeue());
-        else
-            onComplete?.Invoke("No relics registered.");
+        StartTest(_testQueue.Dequeue());
     }
 
     private static void StartTest(string relicId)
+    {
+        // A test that throws while being set up or started must not kill the queue: the run would
+        // stop silently with the player's fast mode still forced to Instant.
+        try { StartTestCore(relicId); }
+        catch (Exception e)
+        {
+            MainFile.Logger.Warn($"[TestManager] {relicId} threw while starting: {e}");
+            _activeRunner = null;
+            _results.Add((relicId, new TestResult(false, $"threw while starting: {e.Message}")));
+            MainFile.Logger.Info($"{relicId}: FAIL (threw while starting)");
+            AdvanceQueue();
+        }
+    }
+
+    private static void StartTestCore(string relicId)
     {
         var stats = RelicStatsRegistry.Get(relicId);
         if (stats == null)
@@ -101,48 +178,45 @@ public static class TestManager
             return;
         }
 
-        // Cancel any pending EndTurn from a previous test to prevent stale timer interference
+        // Cancel any pending EndTurn or queued room transition from a previous test to prevent
+        // stale timer interference
         TestHelpers.CancelPendingEndTurn();
+        TestHelpers.CancelQueuedRoomTransitions();
 
-        // Reset stats, heal player, disable god mode, clear powers, and clear permanent deck before each test
+        // Reset stats, heal player, disable god mode, clear powers, potions, card-selection
+        // overrides and the permanent deck before each test, so nothing a previous test left
+        // behind (a Skill Potion that needs a choice, a pushed selector) changes this one's path.
         stats.Reset();
         TestHelpers.Heal(999);
         TestHelpers.DisableGodMode();
         TestHelpers.ClearPlayerPowers();
+        TestHelpers.ClearPotions();
+        TestHelpers.PopCardSelector();
         ClearPlayerDeck();
 
         var runner = new TestRunner(relicId);
         stats.RegisterTest(runner);
         _activeRunner = runner;
-        StartTimeoutTick();
+        // Completion is reported by the runner itself, tied to this runner: finishing it may start
+        // the next test synchronously, and a late callback from this one must not complete that one.
+        runner.Completed += () => { if (_activeRunner == runner) OnTestComplete(); };
+        ScheduleNextTick(runner);
         runner.Start();
-
-        if (runner.IsComplete)
-            OnTestComplete();
     }
 
-    private static void StartTimeoutTick()
+    // One tick chain per runner; it stops when its runner completes or is replaced.
+    private static void ScheduleNextTick(TestRunner runner)
     {
-        ScheduleNextTick();
-    }
-
-    private static void ScheduleNextTick()
-    {
-        if (_activeRunner == null || _activeRunner.IsComplete) return;
+        if (_activeRunner != runner || runner.IsComplete) return;
         _tickTimer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(1.0);
-        _tickTimer.Timeout += OnTick;
+        _tickTimer.Timeout += () => OnTick(runner);
     }
 
-    private static void OnTick()
+    private static void OnTick(TestRunner runner)
     {
-        if (_activeRunner == null || _activeRunner.IsComplete) return;
-        _activeRunner.CheckTimeouts();
-        if (_activeRunner.IsComplete)
-        {
-            OnTestComplete();
-            return;
-        }
-        ScheduleNextTick();
+        if (_activeRunner != runner || runner.IsComplete) return;
+        runner.CheckTimeouts();
+        ScheduleNextTick(runner);
     }
 
     public static void Signal(GameEvent gameEvent)
@@ -157,9 +231,6 @@ public static class TestManager
             TestHelpers.OnCardPlayed();
 
         _activeRunner.Signal(gameEvent);
-
-        if (_activeRunner.IsComplete)
-            OnTestComplete();
     }
 
     public static void CheckTimeouts()
@@ -167,9 +238,6 @@ public static class TestManager
         if (_activeRunner == null || _activeRunner.IsComplete) return;
 
         _activeRunner.CheckTimeouts();
-
-        if (_activeRunner.IsComplete)
-            OnTestComplete();
     }
 
     private static string FailedTestsPath =>
@@ -212,6 +280,9 @@ public static class TestManager
         MainFile.Logger.Info($"{_activeRunner.RelicId}: {status}");
 
         _activeRunner = null;
+        // Drop anything the finished test still has queued (a fight behind a transition) now,
+        // rather than letting it start before the next test's setup.
+        TestHelpers.CancelQueuedRoomTransitions();
         AdvanceQueue();
     }
 
@@ -219,18 +290,11 @@ public static class TestManager
     {
         if (_testQueue.Count > 0)
         {
-            var nextId = _testQueue.Dequeue();
-            WaitForCombatSettled(() => StartTest(nextId));
+            WaitForCombatSettled(() => StartTest(_testQueue.Dequeue()));
             return;
         }
 
-        PersistFailedTests();
-
-        var passed = _results.Count(r => r.Result.Passed);
-        var failed = _results.Count - passed;
-        var summary = $"{passed} passed, {failed} failed (of {_results.Count})";
-        MainFile.Logger.Info($"Test run complete: {summary}");
-        _onAllComplete?.Invoke(summary);
+        EndRun();
     }
 
     /// <summary>
@@ -240,9 +304,24 @@ public static class TestManager
     private static void WaitForCombatSettled(Action then, int attempts = 0)
     {
         var cm = CombatManager.Instance;
-        if (cm == null || !cm.IsInProgress || TestHelpers.Player?.PlayerCombatState?.Phase == PlayerTurnPhase.Play || attempts >= 25)
+        // Never start the next test while the previous one's room transition is still running: its
+        // first StartFight would queue behind it anyway, but its setup (strip, heal, clear deck)
+        // would run against a room that is being torn down.
+        if (TestHelpers.RoomTransitionRunningFor.TotalSeconds >= StuckTransitionSeconds)
         {
-            then();
+            var reason = $"room transition '{TestHelpers.RoomTransitionLabel}' still running after " +
+                         $"{TestHelpers.RoomTransitionRunningFor.TotalSeconds:0}s";
+            MainFile.Logger.Warn($"[TestManager] aborting the run: {reason}");
+            EndRun(reason);
+            return;
+        }
+        bool transitionDone = !TestHelpers.IsRoomTransitionPending;
+        bool combatSettled = cm == null || !cm.IsInProgress || TestHelpers.Player?.PlayerCombatState?.Phase == PlayerTurnPhase.Play;
+        if (transitionDone && (combatSettled || attempts >= 100))
+        {
+            // Always start the next test on a fresh frame. Called straight from the previous
+            // test's last signal, it would otherwise start a fight inside that hook's postfix.
+            Callable.From(then).CallDeferred();
             return;
         }
         var timer = ((SceneTree)Engine.GetMainLoop()).CreateTimer(0.1);
@@ -253,8 +332,6 @@ public static class TestManager
     {
         if (_activeRunner == null || _activeRunner.IsComplete) return;
         _activeRunner.CheckTimeouts();
-        if (_activeRunner.IsComplete)
-            OnTestComplete();
     }
 
     public static string FormatResults()
@@ -273,6 +350,8 @@ public static class TestManager
         var failed = _results.Count - passed;
         sb.AppendLine($"---");
         sb.AppendLine($"{passed} passed, {failed} failed (of {_results.Count})");
+        if (_abortReason != null)
+            sb.AppendLine($"Run aborted: {_abortReason}; {_skippedTests} tests skipped.");
         return sb.ToString();
     }
 }
